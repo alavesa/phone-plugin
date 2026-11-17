@@ -1,0 +1,14 @@
+{
+  "phone.notify": {
+    "sounds": [{"name": "phone:phone/notify"}],
+    "subtitle": "subtitles.phone.notify"
+  },
+  "phone.send": {
+    "sounds": [{"name": "phone:phone/send"}],
+    "subtitle": "subtitles.phone.send"
+  },
+  "phone.shutter": {
+    "sounds": [{"name": "phone:phone/shutter"}],
+    "subtitle": "subtitles.phone.shutter"
+  }
+}

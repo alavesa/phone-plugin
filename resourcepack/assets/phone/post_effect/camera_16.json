@@ -1,0 +1,68 @@
+{
+ "targets": {
+  "swap": {}
+ },
+ "passes": [
+  {
+   "vertex_shader": "minecraft:core/screenquad",
+   "fragment_shader": "phone:post/camera",
+   "inputs": [
+    {
+     "sampler_name": "In",
+     "target": "minecraft:main",
+     "bilinear": true
+    }
+   ],
+   "output": "swap",
+   "uniforms": {
+    "CameraConfig": [
+     {
+      "name": "Zoom",
+      "type": "float",
+      "value": 16.0
+     },
+     {
+      "name": "Level",
+      "type": "float",
+      "value": 7.0
+     },
+     {
+      "name": "Levels",
+      "type": "float",
+      "value": 8.0
+     },
+     {
+      "name": "Frame",
+      "type": "float",
+      "value": 1.0
+     }
+    ]
+   }
+  },
+  {
+   "vertex_shader": "minecraft:core/screenquad",
+   "fragment_shader": "minecraft:post/blit",
+   "inputs": [
+    {
+     "sampler_name": "In",
+     "target": "swap"
+    }
+   ],
+   "uniforms": {
+    "BlitConfig": [
+     {
+      "name": "ColorModulate",
+      "type": "vec4",
+      "value": [
+       1.0,
+       1.0,
+       1.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   "output": "minecraft:main"
+  }
+ ]
+}

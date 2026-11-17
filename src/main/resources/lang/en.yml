@@ -1,0 +1,111 @@
+# Phone - English. Copy this file to <code>.yml, translate it, and set "language: <code>" in config.yml.
+# Everything outside "ui:" is MiniMessage (https://docs.advntr.dev/minimessage/format.html); <name> are placeholders.
+# The strings under "ui:" (except ui.title and ui.button.*) are drawn inside the phone screen: plain text only,
+# no tags - the phone theme colours them, and the plugin measures them to align the screen.
+
+item:
+  phone:
+    name: "<white>Phone"
+    lore: "<gray>Right-click to open"
+  photo-paper:
+    name: "<white>Photo Paper"
+    lore: "<gray>Used when the phone prints a photo"
+  photo:
+    name: "<white>Photo by <player>"
+    lore-by: "<gray>Photographer: <white><player>"
+    lore-date: "<gray>Taken: <white><date>"
+    lore-location: "<gray>Location: <white><world> <x>, <y>, <z>"
+
+error:
+  no-permission: "<red>You are not allowed to do that."
+  no-phone: "<red>You need a phone for that."
+  no-apps: "<red>Your phone has no apps you are allowed to use."
+
+message:
+  hint: "<aqua>New message from <white><player></white> - open your phone"
+  waiting: "<aqua>You have <white><count></white> unread message(s) on your phone"
+
+camera:
+  not-allowed: "<red>You cannot use the camera."
+  hold-phone: "<red>Hold the phone in your hand to use the camera."
+  actionbar: "<white>Zoom <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right-click: take photo <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  actionbar-capturing: "<yellow>Developing the photo..."
+  cooldown: "<red>The camera is ready again in <seconds> s"
+  failed: "<red>The photo could not be developed."
+  nothing-to-print: "<red>There is no photo to print."
+  no-paper: "<red>You need Photo Paper to print."
+  inventory-full: "<red>Your inventory is full."
+  printed: "<green>Photo printed."
+  printed-dropped: "<green>Photo printed. <gray>Your inventory is full, so it dropped at your feet."
+
+command:
+  players-only: "<red>Only a player can do that."
+  reloaded: "<green>Phone configuration reloaded."
+  gave-phone: "<green>Gave a phone to <player>."
+  gave-paper: "<green>Gave <amount> photo paper to <player>."
+  unknown-player: "<red>No player named <player> has been on this server."
+  muted: "<green><player> can no longer send phone messages."
+  muted-for: "<green><player> cannot send phone messages for <minutes> minute(s)."
+  unmuted: "<green><player> can send phone messages again."
+  blocked: "<green>You blocked <player>. Their messages no longer reach you."
+  unblocked: "<green>You unblocked <player>."
+  fov: "<green>Photos are now taken with a field of view of <fov>. <gray>Use the same value as in your video settings."
+  no-pack: "<red>This server does not send the phone resource pack."
+
+ui:
+  title: "<white>Phone"
+  page: "Page <page> of <pages>"
+  button:
+    messages: "Messages"
+    camera: "Camera"
+    close: "Close"
+    back: "Back"
+    search: "Search / refresh"
+    clear-search: "Show everyone"
+    next-page: "More contacts"
+    send: "Send"
+    refresh: "Refresh"
+    block: "Block"
+    unblock: "Unblock"
+    older: "Older"
+    newer: "Newer"
+    print: "Print"
+    retake: "Retake"
+  home:
+    title: "Home"
+    greeting: "Hello, <player>"
+    unread: "<count> unread message(s)"
+    no-unread: "No new messages"
+  contacts:
+    title: "Messages"
+    hint: "Pick someone to write to"
+    empty: "Nobody here yet"
+    filter: "Search: <filter>"
+    search-label: "Find a player by name"
+    you-prefix: "You: "
+    unknown: "Unknown"
+  conversation:
+    empty: "No messages yet. Say hi!"
+    older-above: "Older messages: press Older"
+    newer-below: "Newer messages: press Newer"
+    blocked: "You blocked this player"
+    input-label: "Message"
+    you: "You"
+    online: "online"
+    offline: "offline"
+    read-mark: "(read)"
+  send-error:
+    empty: "Type a message first"
+    too-long: "Too long (max <max> characters)"
+    rate-limited: "Slow down a little"
+    muted: "You are muted"
+    blocked: "This player does not accept your messages"
+    you-blocked: "Unblock this player first"
+    self: "You cannot message yourself"
+    cancelled: "The message was not sent"
+    no-permission: "You may not send messages"
+    error: "Could not send - try again"
+  camera:
+    title: "Camera"
+    captured: "Photo taken"
+    zoom: "Zoom <zoom>x"

@@ -1,0 +1,218 @@
+{
+ "providers": [
+  {
+   "type": "space",
+   "advances": {
+    "\ue044": 1,
+    "\ue045": 2,
+    "\ue046": 4,
+    "\ue047": 8,
+    "\ue048": 16,
+    "\ue049": 32,
+    "\ue04a": 64,
+    "\ue04b": 128,
+    "\ue04c": 256,
+    "\ue04d": 512,
+    "\ue04e": -1,
+    "\ue04f": -2,
+    "\ue050": -4,
+    "\ue051": -8,
+    "\ue052": -16,
+    "\ue053": -32,
+    "\ue054": -64,
+    "\ue055": -128,
+    "\ue056": -256,
+    "\ue057": -512
+   }
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/bubble_top.png",
+   "height": 10,
+   "ascent": 9,
+   "chars": [
+    "\ue000\ue001\ue002\ue003\ue004\ue005\ue006\ue007\ue008\ue009"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/bubble_mid.png",
+   "height": 9,
+   "ascent": 8,
+   "chars": [
+    "\ue00a\ue00b\ue00c\ue00d\ue00e\ue00f\ue010\ue011\ue012\ue013"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/bubble_bot.png",
+   "height": 10,
+   "ascent": 8,
+   "chars": [
+    "\ue014\ue015\ue016\ue017\ue018\ue019\ue01a\ue01b\ue01c\ue01d\ue01e\ue01f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/bubble_one.png",
+   "height": 11,
+   "ascent": 9,
+   "chars": [
+    "\ue020\ue021\ue022\ue023\ue024\ue025\ue026\ue027\ue028\ue029\ue02a\ue02b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_48.png",
+   "height": 48,
+   "ascent": 11,
+   "chars": [
+    "\ue02c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_64.png",
+   "height": 64,
+   "ascent": 11,
+   "chars": [
+    "\ue02d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_80.png",
+   "height": 80,
+   "ascent": 11,
+   "chars": [
+    "\ue02e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_96.png",
+   "height": 96,
+   "ascent": 11,
+   "chars": [
+    "\ue02f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_112.png",
+   "height": 112,
+   "ascent": 11,
+   "chars": [
+    "\ue030"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_128.png",
+   "height": 128,
+   "ascent": 11,
+   "chars": [
+    "\ue031"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_144.png",
+   "height": 144,
+   "ascent": 11,
+   "chars": [
+    "\ue032"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_160.png",
+   "height": 160,
+   "ascent": 11,
+   "chars": [
+    "\ue033"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_176.png",
+   "height": 176,
+   "ascent": 11,
+   "chars": [
+    "\ue034"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_192.png",
+   "height": 192,
+   "ascent": 11,
+   "chars": [
+    "\ue035"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_208.png",
+   "height": 208,
+   "ascent": 11,
+   "chars": [
+    "\ue036"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_224.png",
+   "height": 224,
+   "ascent": 11,
+   "chars": [
+    "\ue037"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_240.png",
+   "height": 240,
+   "ascent": 11,
+   "chars": [
+    "\ue038"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panel_255.png",
+   "height": 255,
+   "ascent": 11,
+   "chars": [
+    "\ue039"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/header.png",
+   "height": 13,
+   "ascent": 9,
+   "chars": [
+    "\ue03a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/icons.png",
+   "height": 16,
+   "ascent": 11,
+   "chars": [
+    "\ue03b\ue03c\ue03d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/marks.png",
+   "height": 8,
+   "ascent": 7,
+   "chars": [
+    "\ue03e\ue03f\ue040\ue041\ue042\ue043"
+   ]
+  }
+ ]
+}

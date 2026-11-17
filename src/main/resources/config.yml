@@ -1,0 +1,102 @@
+# Phone - configuration. /phone reload applies everything except the resource-pack host and the database.
+
+# Language file in plugins/Phone/lang/<language>.yml (all player-facing text, MiniMessage).
+language: en
+
+item:
+  # Base item of the phone. Pick something without a right-click use of its own.
+  material: ECHO_SHARD
+  # true: the phone's look comes from the resource pack (item_model phone:phone / phone:phone_unread).
+  # false: the phone looks like the base material and unread messages show as an enchantment glint.
+  #        Use this if many of your players play without the pack.
+  use-item-model: true
+  recipe:
+    enabled: false
+    # Three rows of three characters; a space is an empty slot.
+    shape:
+      - "IGI"
+      - "IRI"
+      - "ICI"
+    ingredients:
+      I: IRON_INGOT
+      G: GLASS_PANE
+      R: REDSTONE
+      C: COPPER_INGOT
+
+ui:
+  # Blue tint + vignette over the world while a phone screen is open (post effect phone:screen).
+  screen-effect: true
+  # Player heads next to names (object components).
+  player-heads: true
+  # Java time zone id for timestamps ("system" = the server's zone), and the formats used.
+  time-zone: system
+  time-format: "HH:mm"
+  date-format: "d MMM"
+  # Conversation paging: at most this many messages and this many text lines per page.
+  messages-per-page: 6
+  max-lines-per-page: 16
+  contacts-per-page: 5
+
+messaging:
+  max-length: 160
+  # At most <messages> messages per <per-seconds> seconds for one player.
+  rate-limit:
+    messages: 5
+    per-seconds: 10
+  # Hint shown to the recipient: actionbar, chat or none.
+  hint: actionbar
+  # A dialog cannot be updated in place: to show a new message in an open conversation the whole dialog is sent
+  # again, which empties the text field. true = re-send after refresh-delay-ticks (several quick messages become
+  # one refresh); false = the recipient only hears the sound and presses Refresh (that button keeps the typed text).
+  auto-refresh: true
+  refresh-delay-ticks: 20
+  # People you have talked with stay in the contact list when they are offline.
+  show-offline-contacts: true
+  # Delete messages older than this many days at startup (0 = keep forever).
+  retention-days: 0
+
+camera:
+  enabled: true
+  cooldown-seconds: 5
+  # Vertical field of view the photo is rendered with at 1x. The server cannot read the client's FOV setting;
+  # 70 is the vanilla default. Players set their own with /phone fov <30-110>.
+  base-fov: 70
+  # Zoom factors, in order. With the post-effect method only 1, 2, 3, 4, 6, 8, 12 and 16 exist in the pack.
+  zoom-levels: [1, 2, 4, 8]
+  # post_effect: digital zoom done by the resource pack (recommended).
+  # fov: slows the player down so the client narrows its FOV. Works without the pack, but tops out near 2x,
+  #      depends on the client's "FOV Effects" setting and roots the player. Used automatically for players
+  #      without the pack.
+  zoom-method: post_effect
+  # Photo rendering (server-side ray casting).
+  max-distance: 96
+  # Chunk snapshots copied per tick on the main thread before the async render, and the cap per photo.
+  chunks-per-tick: 6
+  max-chunks: 120
+  entities: true
+  dither: true
+  # Printing
+  require-photo-paper: false
+  location-in-lore: true
+  # Full inventory when printing: true drops the photo at the player's feet, false refuses to print.
+  drop-when-full: true
+
+resource-pack:
+  # Send the pack when a player joins.
+  send-on-join: true
+  # builtin: the plugin serves plugins/Phone/phone-pack.zip itself over HTTP (see builtin below).
+  # url:     you host plugins/Phone/phone-pack.zip yourself and put its address in "url".
+  # none:    nothing is sent (for example when you merge the pack into your server pack).
+  mode: builtin
+  url: ""
+  required: false
+  prompt: "<white>The phone needs this pack for its screen, camera and sounds."
+  builtin:
+    bind: 0.0.0.0
+    port: 8765
+    # Address players reach this machine at. Empty = the address each player typed to join.
+    public-host: ""
+  # Treat every player as having the pack (set this to true with mode "none" when the phone pack is part of
+  # another pack the players already have). Otherwise the fancy UI is only used after the client reports the
+  # pack as loaded.
+  assume-loaded: false

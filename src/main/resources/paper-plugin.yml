@@ -1,0 +1,30 @@
+name: Phone
+version: '${version}'
+main: fi.alavesa.phone.PhonePlugin
+api-version: '26.3'
+description: A phone item with a Messages app and a Camera app, built from dialogs, a custom font and post effects
+authors: [Piia Alavesa]
+
+# /phone is registered with Brigadier (LifecycleEvents.COMMANDS) in phone/PhoneCommand, not here.
+
+permissions:
+  phone.admin:
+    description: Everything, including /phone reload, mute and open
+    default: op
+    children:
+      phone.use: true
+      phone.give: true
+      phone.camera: true
+      phone.message: true
+  phone.use:
+    description: Open the phone
+    default: true
+  phone.message:
+    description: Read and send messages
+    default: true
+  phone.camera:
+    description: Use the camera and print photos
+    default: true
+  phone.give:
+    description: /phone give
+    default: op
