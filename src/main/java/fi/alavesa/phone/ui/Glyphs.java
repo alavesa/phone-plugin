@@ -29,6 +29,9 @@ public final class Glyphs {
     public final int panelTop;
     public final int capWidth;
     public final int tailWidth;
+    /** Width of an app button on the home screen and how far its icon reaches above the button. */
+    public final int appButtonWidth;
+    public final int appIconRows;
     public final int[] panelHeights;
     /** Bubble tile widths, widest first. */
     public final int[] tileWidths;
@@ -50,6 +53,8 @@ public final class Glyphs {
         capWidth = num(p, "layout.cap_width");
         tailWidth = num(p, "layout.tail_width");
         spacePowers = num(p, "layout.space_powers");
+        appButtonWidth = num(p, "layout.app_button_width");
+        appIconRows = num(p, "layout.app_icon_rows");
         panelHeights = ints(p, "layout.panel_heights");
         int[] tiles = ints(p, "layout.tile_widths");
         tileWidths = new int[tiles.length];

@@ -5,13 +5,13 @@ import java.util.ArrayList;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
-import net.kyori.adventure.text.format.ShadowColor;
 import net.kyori.adventure.text.format.TextColor;
 
 /**
  * The phone screens drawn with the resource pack: a dark screen panel with a status bar, a header bar, speech
- * bubbles made of stretchable font pieces, icons and marks. Every screen is ONE multi-line text; each line is padded
- * to the same width (see {@link Line}), and the panel glyph on the first line hangs down behind everything else.
+ * bubbles made of stretchable font pieces, round app icons and marks. Every screen is ONE multi-line text; each line
+ * is padded to the same width (see {@link Line}), and the panel glyph on the first line hangs down behind
+ * everything else, including the inputs and buttons the dialog stacks under the text.
  */
 public final class FancyRenderer implements ScreenRenderer {
 
@@ -35,7 +35,7 @@ public final class FancyRenderer implements ScreenRenderer {
     private static final int BUBBLE_PAD = 2;
     /** Bubbles never span the whole screen: the other side keeps this much free, like in a real messenger. */
     private static final int BUBBLE_FREE = 34;
-    private static final int CONTACT_LABEL_WIDTH = 204;
+    private static final int ROW_LABEL_WIDTH = 204;
 
     private final Glyphs g;
     private final FontWidths fw;
@@ -57,22 +57,87 @@ public final class FancyRenderer implements ScreenRenderer {
         return g.panelWidth + 10;
     }
 
+    @Override
+    public int rowButtonWidth() {
+        return g.contentWidth;
+    }
+
+    @Override
+    public int appButtonWidth() {
+        return g.appButtonWidth;
+    }
+
     private Line line() {
         return new Line(g, fw);
     }
 
-    /** Puts the status line (panel + clock) and the header line (bar + title) in front of {@code rest}. */
-    private Component screen(String clock, String title, Line titleLine, List<Line> rest, int belowPx) {
-        int lines = rest.size() + 2;
+    private Line notice(String text) {
+        return line().centred(fw.ellipsize(text, g.contentWidth - 4, false), ALERT, false);
+    }
+
+    /**
+     * Assembles a screen: the status line (panel + {@code status} text), an optional header line (bar + title) and
+     * the rest. The panel is picked tall enough to reach behind {@code belowPx} of controls.
+     */
+    private Component screen(Line statusText, Line header, List<Line> rest, int belowPx) {
+        int lines = rest.size() + (header == null ? 1 : 2);
         int needed = g.panelTop + lines * LINE_HEIGHT + TEXT_PADDING + belowPx + PANEL_BOTTOM;
-        Line status = line().glyph(-g.panelMargin, "panel." + g.panelHeightFor(needed), null).centred(clock, DIM, false);
-        Line header = titleLine != null ? titleLine : line().glyph(-g.panelMargin, "header", null).centred(title, TITLE, true);
+        // the panel has to be the first glyph of the line: it is drawn first, everything else on top
+        Line status = line().glyph(-g.panelMargin, "panel." + g.panelHeightFor(needed), null);
         List<Component> out = new ArrayList<>(lines);
-        out.add(status.build());
-        out.add(header.build());
+        out.add(status.append(statusText).build());
+        if (header != null) out.add(header.build());
         for (Line l : rest) out.add(l.build());
         return Component.join(JoinConfiguration.newlines(), out);
     }
+
+    private Component screen(String clock, String title, List<Line> rest, int belowPx) {
+        return screen(line().centred(clock, DIM, false), header(title), rest, belowPx);
+    }
+
+    private Line header(String title) {
+        return line().glyph(-g.panelMargin, "header", null).centred(fw.ellipsize(title, g.contentWidth - 20, true), TITLE, true);
+    }
+
+    // ---- lock screen ------------------------------------------------------------------------------------------------
+
+    @Override
+    public Component lock(Views.Lock v, int belowPx) {
+        List<Line> rest = new ArrayList<>();
+        rest.add(line());
+        rest.add(line());
+        // the clock: vanilla digits at three times their size, centred as one unit
+        int width = 0;
+        List<String> digits = new ArrayList<>();
+        for (char c : v.clock().toCharArray()) {
+            String name = c == ':' ? "big.colon" : Character.isDigit(c) ? "big." + c : null;
+            if (name == null) continue;
+            digits.add(name);
+            width += g.advance(name);
+        }
+        Line clock = line();
+        int x = (g.contentWidth - width) / 2;
+        for (String name : digits) {
+            clock.glyph(x, name, TITLE);
+            x += g.advance(name);
+        }
+        rest.add(clock);
+        rest.add(line());
+        rest.add(line().centred(v.date(), DIM, false));
+        rest.add(line());
+        String prompt = switch (v.mode()) {
+            case LOCKED -> lang.plain("ui.lock.enter", "player", v.playerName());
+            case SETUP -> lang.plain("ui.lock.setup");
+            case CHANGE -> lang.plain("ui.lock.change");
+        };
+        rest.add(line().centred(fw.ellipsize(prompt, g.contentWidth - 4, false), TITLE, false));
+        rest.add(v.notice().isEmpty() ? line() : notice(v.notice()));
+        // status bar: a small padlock where the other screens show the time
+        Line status = line().glyph((g.contentWidth - g.advance("mark.lock")) / 2, "mark.lock", DIM);
+        return screen(status, null, rest, belowPx);
+    }
+
+    // ---- home -------------------------------------------------------------------------------------------------------
 
     @Override
     public Component home(Views.Home v, int belowPx) {
@@ -81,21 +146,31 @@ public final class FancyRenderer implements ScreenRenderer {
         rest.add(line().centred(lang.plain("ui.home.greeting", "player", v.playerName()), TITLE, false));
         rest.add(line().centred(v.unread() > 0 ? lang.plain("ui.home.unread", "count", v.unread()) : lang.plain("ui.home.no-unread"),
                 v.unread() > 0 ? ALERT : META, false));
-        rest.add(line());
-        return screen(v.clock(), lang.plain("ui.home.title"), null, rest, belowPx);
+        // room for the app icons, which reach up from their buttons over the end of this text
+        int free = g.appIconRows - 10 - TEXT_PADDING;
+        for (int i = 0; i < (free + LINE_HEIGHT - 1) / LINE_HEIGHT + 1; i++) rest.add(line());
+        return screen(line().centred(v.clock(), DIM, false), null, rest, belowPx);
     }
 
+    /**
+     * An app on the home screen. The label of the (vanilla) button carries a tile glyph that covers the button's
+     * face and draws the round icon above it; the app name is then written over the covered face. The client does
+     * not clip a button label that fits its button, so the icon may stand taller than the button.
+     */
     @Override
-    public Component appButton(String app, Component label, int badge) {
-        Component out = Component.text(g.ch("icon." + app)).font(Glyphs.FONT).color(TITLE).shadowColor(ShadowColor.none())
-                .append(Component.text(" ").font(Glyphs.DEFAULT_FONT))
-                .append(label.font(Glyphs.DEFAULT_FONT));
+    public Component appButton(String app, String label, int badge) {
+        int inner = g.appButtonWidth - 4;       // a centred label of this width starts 2 px inside the button
+        Line l = new Line(g, fw, inner);
+        l.glyph(-1, "app." + app, null);
         if (badge > 0) {
-            out = out.append(Component.text(g.space(3) + g.ch("mark.dot")).font(Glyphs.FONT).color(ALERT).shadowColor(ShadowColor.none()))
-                    .append(Component.text(badge > 99 ? "99+" : String.valueOf(badge)).font(Glyphs.DEFAULT_FONT).color(ALERT));
+            String name = "badge." + (badge > 9 ? "9+" : String.valueOf(badge));
+            l.glyph(-1 + (g.appButtonWidth - 2 + 32) / 2 - 9, name, null);
         }
-        return out;
+        l.centred(fw.ellipsize(label, inner - 2, false), DIM, false);
+        return l.build();
     }
+
+    // ---- contacts ---------------------------------------------------------------------------------------------------
 
     @Override
     public Component contacts(Views.Contacts v, int belowPx) {
@@ -111,17 +186,12 @@ public final class FancyRenderer implements ScreenRenderer {
         } else if (v.pageCount() > 1) {
             rest.add(line().centred(lang.plain("ui.page", "page", v.pageIndex() + 1, "pages", v.pageCount()), META, false));
         }
-        return screen(v.clock(), lang.plain("ui.contacts.title"), null, rest, belowPx);
-    }
-
-    @Override
-    public int contactButtonWidth() {
-        return g.contentWidth;
+        return screen(v.clock(), lang.plain("ui.contacts.title"), rest, belowPx);
     }
 
     @Override
     public Component contactButton(Views.Contact c) {
-        Line l = new Line(g, fw, CONTACT_LABEL_WIDTH);
+        Line l = new Line(g, fw, ROW_LABEL_WIDTH);
         int x = 0;
         // unread dot, else a presence dot
         l.glyph(x, "mark.dot", c.unread() > 0 ? ALERT : (c.online() ? ONLINE : META));
@@ -133,15 +203,17 @@ public final class FancyRenderer implements ScreenRenderer {
         String name = fw.ellipsize(c.name(), 70, true);
         l.text(x, name, TITLE, true);
         x += fw.width(name, true) + 5;
-        int right = CONTACT_LABEL_WIDTH;
+        int right = ROW_LABEL_WIDTH;
         if (!c.time().isEmpty()) right -= fw.width(c.time(), false) + 4;
         if (!c.preview().isEmpty() && right - x > 20) {
             String preview = (c.previewFromMe() ? lang.plain("ui.contacts.you-prefix") : "") + c.preview();
             l.text(x, fw.ellipsize(preview, right - x, false), c.unread() > 0 ? DIM : META, false);
         }
-        if (!c.time().isEmpty()) l.rightAligned(CONTACT_LABEL_WIDTH, c.time(), META);
+        if (!c.time().isEmpty()) l.rightAligned(ROW_LABEL_WIDTH, c.time(), META);
         return l.build();
     }
+
+    // ---- conversation -----------------------------------------------------------------------------------------------
 
     @Override
     public int messageLines(String body) {
@@ -149,53 +221,58 @@ public final class FancyRenderer implements ScreenRenderer {
         return TextWrapper.wrap(fw, body, bubbleTextWidth).size() + 1;
     }
 
+    private Line nameHeader(String partnerName, boolean online) {
+        // presence dot + name, centred as one unit
+        String name = fw.ellipsize(partnerName, g.contentWidth - 60, true);
+        int start = (g.contentWidth - fw.width(name, true) - 9) / 2;
+        return line().glyph(-g.panelMargin, "header", null)
+                .glyph(start, "mark.dot", online ? ONLINE : META)
+                .text(start + 9, name, TITLE, true);
+    }
+
     @Override
     public Component conversation(Views.Conversation v, int belowPx) {
-        // header: presence dot + name, centred as one unit
-        String name = fw.ellipsize(v.partnerName(), g.contentWidth - 60, true);
-        int nameW = fw.width(name, true);
-        int start = (g.contentWidth - nameW - 9) / 2;
-        Line header = line().glyph(-g.panelMargin, "header", null)
-                .glyph(start, "mark.dot", v.online() ? ONLINE : META)
-                .text(start + 9, name, TITLE, true);
-
         List<Line> rest = new ArrayList<>();
         boolean alert = !v.notice().isEmpty() || v.blocked();
         String info = !v.notice().isEmpty() ? v.notice() : v.blocked() ? lang.plain("ui.conversation.blocked")
                 : v.hasOlder() ? lang.plain("ui.conversation.older-above") : "";
-        rest.add(line().centred(fw.ellipsize(info, g.contentWidth - 4, false), alert ? ALERT : META, false));
+        Line top = line();
+        if (v.hasOlder() && !alert) top.glyph(4, "mark.up", META);
+        rest.add(top.centred(fw.ellipsize(info, g.contentWidth - 30, false), alert ? ALERT : META, false));
         if (v.messages().isEmpty()) {
             rest.add(line());
             rest.add(line().centred(lang.plain("ui.conversation.empty"), META, false));
             rest.add(line());
         }
         for (Views.Bubble b : v.messages()) {
-            rest.add(meta(v, b));
+            rest.add(meta(v.partnerId(), v.partnerName(), b));
             bubble(rest, TextWrapper.wrap(fw, b.body(), bubbleTextWidth), b.outgoing());
         }
-        if (v.hasNewer()) rest.add(line().centred(lang.plain("ui.conversation.newer-below"), META, false));
-        return screen(v.clock(), "", header, rest, belowPx);
+        if (v.hasNewer()) {
+            rest.add(line().glyph(4, "mark.down", META).centred(lang.plain("ui.conversation.newer-below"), META, false));
+        }
+        return screen(line().centred(v.clock(), DIM, false), nameHeader(v.partnerName(), v.online()), rest, belowPx);
     }
 
     /** The small line above a bubble: head, name and time for incoming, time and read mark for outgoing. */
-    private Line meta(Views.Conversation v, Views.Bubble b) {
+    private Line meta(java.util.UUID partnerId, String partnerName, Views.Bubble b) {
         Line l = line();
+        String time = b.edited() ? lang.plain("ui.conversation.edited") + " " + b.time() : b.time();
         if (b.outgoing()) {
             int right = g.contentWidth - g.tailWidth;
             int markW = g.advance("mark.ticks");
-            int timeW = fw.width(b.time(), false);
-            l.text(right - markW - 2 - timeW, b.time(), META, false);
+            l.text(right - markW - 2 - fw.width(time, false), time, META, false);
             l.glyph(right - markW, b.read() ? "mark.ticks" : "mark.tick", b.read() ? READ : META);
         } else {
             int x = g.tailWidth;
             if (heads) {
-                l.head(x, v.partnerId());
+                l.head(x, partnerId);
                 x += Line.HEAD_WIDTH + 3;
             }
-            String name = fw.ellipsize(v.partnerName(), 110, true);
+            String name = fw.ellipsize(partnerName, 90, true);
             l.text(x, name, DIM, true);
             x += fw.width(name, true) + 5;
-            l.text(x, b.time(), META, false);
+            l.text(x, time, META, false);
         }
         return l;
     }
@@ -235,14 +312,59 @@ public final class FancyRenderer implements ScreenRenderer {
         }
     }
 
+    // ---- editing ----------------------------------------------------------------------------------------------------
+
+    @Override
+    public Component ownMessages(Views.OwnMessages v, int belowPx) {
+        List<Line> rest = new ArrayList<>();
+        rest.add(line());
+        rest.add(line().centred(fw.ellipsize(lang.plain("ui.edit.to", "player", v.partnerName()), g.contentWidth - 8, false), DIM, false));
+        if (!v.notice().isEmpty()) rest.add(notice(v.notice()));
+        else rest.add(line().centred(lang.plain(v.count() == 0 ? "ui.edit.none" : "ui.edit.pick"), META, false));
+        return screen(v.clock(), lang.plain("ui.edit.title"), rest, belowPx);
+    }
+
+    @Override
+    public Component ownMessageButton(Views.Bubble m) {
+        Line l = new Line(g, fw, ROW_LABEL_WIDTH);
+        l.glyph(0, "mark.pencil", DIM);
+        int right = ROW_LABEL_WIDTH - fw.width(m.time(), false) - 4;
+        l.text(11, fw.ellipsize(m.body(), right - 11, false), TITLE, false);
+        l.rightAligned(ROW_LABEL_WIDTH, m.time(), META);
+        return l.build();
+    }
+
+    @Override
+    public Component editMessage(Views.EditMessage v, int belowPx) {
+        List<Line> rest = new ArrayList<>();
+        rest.add(v.notice().isEmpty() ? line().centred(lang.plain("ui.edit.hint"), META, false) : notice(v.notice()));
+        rest.add(meta(null, v.partnerName(), v.message()));
+        bubble(rest, TextWrapper.wrap(fw, v.message().body(), bubbleTextWidth), true);
+        rest.add(line());
+        return screen(v.clock(), lang.plain("ui.edit.title"), rest, belowPx);
+    }
+
+    // ---- camera and settings ----------------------------------------------------------------------------------------
+
     @Override
     public Component photoResult(Views.PhotoResult v, int belowPx) {
         List<Line> rest = new ArrayList<>();
         rest.add(line());
-        rest.add(line().centred(lang.plain("ui.camera.captured"), TITLE, false));
+        rest.add(line().centred(v.seconds() > 0 ? lang.plain("ui.camera.recorded", "seconds", String.format(java.util.Locale.ROOT, "%.1f", v.seconds()))
+                : lang.plain("ui.camera.captured"), TITLE, false));
         rest.add(line().centred(lang.plain("ui.camera.zoom", "zoom", v.zoom()), META, false));
         if (!v.location().isEmpty()) rest.add(line().centred(fw.ellipsize(v.location(), g.contentWidth - 8, false), META, false));
         rest.add(line());
-        return screen(v.clock(), lang.plain("ui.camera.title"), null, rest, belowPx);
+        return screen(v.clock(), lang.plain("ui.camera.title"), rest, belowPx);
+    }
+
+    @Override
+    public Component settings(Views.Settings v, int belowPx) {
+        List<Line> rest = new ArrayList<>();
+        rest.add(line());
+        rest.add(line().centred(v.playerName(), TITLE, false));
+        rest.add(line().centred(fw.ellipsize(v.packLine(), g.contentWidth - 8, false), META, false));
+        rest.add(line());
+        return screen(v.clock(), lang.plain("ui.settings.title"), rest, belowPx);
     }
 }

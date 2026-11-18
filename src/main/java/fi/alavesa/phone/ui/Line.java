@@ -114,6 +114,19 @@ public final class Line {
         return this;
     }
 
+    /**
+     * Continues this line with everything placed on {@code other} (same origin). Used to put a background glyph
+     * first and independently built content after it.
+     */
+    public Line append(Line other) {
+        if (other.cursor == 0) return this;         // nothing was placed
+        // other's pieces start with the space that moves from its start (0) to its first piece: re-base on our cursor
+        out.append(Component.text(glyphs.space(-cursor), style(Glyphs.FONT, null, false)));
+        out.append(other.out.build());
+        cursor = other.cursor;
+        return this;
+    }
+
     public int widthOf(String text, boolean bold) {
         return widths.width(text, bold);
     }

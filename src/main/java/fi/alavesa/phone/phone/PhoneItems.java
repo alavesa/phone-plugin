@@ -18,20 +18,12 @@ import org.bukkit.persistence.PersistentDataType;
  *
  * <p>A phone is any item carrying the {@code phone:phone} tag in its persistent data, whatever its material. Its look
  * is the {@code item_model} component pointing at an item model definition of the pack (assets/phone/items/):
- * {@code phone:phone}, {@code phone:phone_unread} (red dot) or {@code phone:phone_camera} (hidden in first person
- * while the viewfinder is open). The phone holds no data of its own: messages belong to the player.
+ * by default {@code phone:phone}, {@code phone:phone_unread} (red dot) or {@code phone:phone_camera} (hidden in first
+ * person while the viewfinder is open); config {@code item.models} can point at others. The phone holds no data of its own: messages belong to the player.
  */
 public final class PhoneItems {
 
-    public enum State {
-        NORMAL("phone"), UNREAD("phone_unread"), CAMERA("phone_camera");
-
-        final NamespacedKey model;
-
-        State(String model) {
-            this.model = new NamespacedKey("phone", model);
-        }
-    }
+    public enum State { NORMAL, UNREAD, CAMERA }
 
     private static final NamespacedKey PHONE = new NamespacedKey("phone", "phone");
     private static final NamespacedKey STATE = new NamespacedKey("phone", "state");
@@ -42,6 +34,7 @@ public final class PhoneItems {
 
     private PhoneConfig cfg;
     private Lang lang;
+    private final java.util.EnumMap<State, NamespacedKey> models = new java.util.EnumMap<>(State.class);
 
     public PhoneItems(PhoneConfig cfg, Lang lang) {
         reload(cfg, lang);
@@ -50,6 +43,9 @@ public final class PhoneItems {
     public void reload(PhoneConfig cfg, Lang lang) {
         this.cfg = cfg;
         this.lang = lang;
+        models.put(State.NORMAL, NamespacedKey.fromString(cfg.modelNormal));
+        models.put(State.UNREAD, NamespacedKey.fromString(cfg.modelUnread));
+        models.put(State.CAMERA, NamespacedKey.fromString(cfg.modelCamera));
     }
 
     public boolean useItemModel() {
@@ -81,11 +77,13 @@ public final class PhoneItems {
     /** Gives a phone item the look of {@code state}. Returns true when the item changed. */
     public boolean apply(ItemStack item, State state) {
         Byte current = item.getPersistentDataContainer().get(STATE, PersistentDataType.BYTE);
-        if (current != null && current == state.ordinal()) return false;
+        NamespacedKey model = cfg.useItemModel ? models.get(state) : null;
+        // also re-applied when the configured model changed since the item was made
+        if (current != null && current == state.ordinal() && java.util.Objects.equals(model, item.getItemMeta().getItemModel())) return false;
         item.editMeta(meta -> {
             meta.getPersistentDataContainer().set(STATE, PersistentDataType.BYTE, (byte) state.ordinal());
             if (cfg.useItemModel) {
-                meta.setItemModel(state.model);
+                meta.setItemModel(model);
                 meta.setEnchantmentGlintOverride(null);
             } else {
                 // no pack look: an enchantment glint is the "unread" signal

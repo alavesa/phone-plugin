@@ -19,7 +19,7 @@ public final class PhoneConfig {
 
     public enum ZoomMethod { POST_EFFECT, FOV }
 
-    public enum PackMode { BUILTIN, URL, NONE }
+    public enum PackMode { AUTO, SAME_PORT, BUILTIN, URL, NONE }
 
     public final String language;
 
@@ -60,6 +60,26 @@ public final class PhoneConfig {
     public final boolean requirePhotoPaper;
     public final boolean locationInLore;
     public final boolean dropWhenFull;
+
+    public final String modelNormal;
+    public final String modelUnread;
+    public final String modelCamera;
+
+    public final boolean passcodeEnabled;
+    public final int passcodeAttempts;
+    public final int passcodeLockoutSeconds;
+
+    public final int scrollStep;
+    public final int editableMessages;
+    public final boolean allowEdit;
+    public final boolean allowDelete;
+    public final int editWindowMinutes;
+
+    public final boolean playerSkins;
+    public final boolean videoEnabled;
+    public final int videoFps;
+    public final int videoMaxSeconds;
+    public final int videoMaxDistance;
 
     public final boolean packSendOnJoin;
     public final PackMode packMode;
@@ -139,8 +159,28 @@ public final class PhoneConfig {
         locationInLore = c.getBoolean("camera.location-in-lore", true);
         dropWhenFull = c.getBoolean("camera.drop-when-full", true);
 
+        modelNormal = modelKey(c.getString("item.models.normal"), "phone:phone", "item.models.normal", log);
+        modelUnread = modelKey(c.getString("item.models.unread"), "phone:phone_unread", "item.models.unread", log);
+        modelCamera = modelKey(c.getString("item.models.camera"), "phone:phone_camera", "item.models.camera", log);
+
+        passcodeEnabled = c.getBoolean("passcode.enabled", true);
+        passcodeAttempts = clamp(c.getInt("passcode.max-attempts", 5), 1, 100);
+        passcodeLockoutSeconds = clamp(c.getInt("passcode.lockout-seconds", 30), 0, 86400);
+
+        scrollStep = clamp(c.getInt("ui.scroll-step", 3), 1, 20);
+        editableMessages = clamp(c.getInt("ui.editable-messages", 5), 1, 8);
+        allowEdit = c.getBoolean("messaging.allow-edit", true);
+        allowDelete = c.getBoolean("messaging.allow-delete", true);
+        editWindowMinutes = Math.max(0, c.getInt("messaging.edit-window-minutes", 0));
+
+        playerSkins = c.getBoolean("camera.player-skins", true);
+        videoEnabled = c.getBoolean("camera.video.enabled", true);
+        videoFps = clamp(c.getInt("camera.video.fps", 4), 1, 10);
+        videoMaxSeconds = clamp(c.getInt("camera.video.max-seconds", 6), 1, 30);
+        videoMaxDistance = clamp(c.getInt("camera.video.max-distance", 48), 16, 128);
+
         packSendOnJoin = c.getBoolean("resource-pack.send-on-join", true);
-        packMode = enumOf(PackMode.class, c.getString("resource-pack.mode"), PackMode.BUILTIN, "resource-pack.mode", log);
+        packMode = enumOf(PackMode.class, c.getString("resource-pack.mode"), PackMode.AUTO, "resource-pack.mode", log);
         packUrl = c.getString("resource-pack.url", "").trim();
         packRequired = c.getBoolean("resource-pack.required", false);
         packPrompt = c.getString("resource-pack.prompt", "");
@@ -148,6 +188,15 @@ public final class PhoneConfig {
         packPort = clamp(c.getInt("resource-pack.builtin.port", 8765), 1, 65535);
         packPublicHost = c.getString("resource-pack.builtin.public-host", "").trim();
         packAssumeLoaded = c.getBoolean("resource-pack.assume-loaded", false);
+    }
+
+    private static String modelKey(String value, String def, String path, Logger log) {
+        if (value == null || value.isBlank()) return def;
+        if (!value.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
+            log.warning("config: " + path + " '" + value + "' is not a namespace:path id; using " + def);
+            return def;
+        }
+        return value;
     }
 
     private static int clamp(int v, int lo, int hi) {

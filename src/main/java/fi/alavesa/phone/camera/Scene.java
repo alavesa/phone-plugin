@@ -31,7 +31,9 @@ final class Scene {
     long time;
     boolean storm;
 
-    final Map<Long, ChunkSnapshot> chunks = new HashMap<>();
+    /** Shared between the frames of a video (filled once, then only read). */
+    Map<Long, ChunkSnapshot> chunks = new HashMap<>();
+    final List<Figure> figures = new ArrayList<>();
     final List<Box> entities = new ArrayList<>();
 
     static long chunkKey(int chunkX, int chunkZ) {

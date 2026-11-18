@@ -4,10 +4,9 @@ import fi.alavesa.phone.config.Lang;
 import fi.alavesa.phone.config.PhoneConfig;
 import fi.alavesa.phone.phone.PhoneItems;
 import fi.alavesa.phone.resourcepack.PackService;
-import fi.alavesa.phone.storage.Database;
+import fi.alavesa.phone.storage.PlayerSettings;
 import fi.alavesa.phone.util.PostFx;
 import fi.alavesa.phone.util.Sounds;
-import fi.alavesa.phone.util.Tasks;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,6 +23,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
@@ -42,6 +42,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
@@ -54,12 +55,16 @@ import org.bukkit.util.Vector;
  *
  * <p><b>Viewfinder.</b> While it is open the player's phones use the {@code phone:phone_camera} item model (hidden
  * in first person) and the post effect {@code phone:camera_<zoom>} draws the zoomed picture and the frame. Controls
- * need no client mod: right-click = shutter, mouse wheel / hotbar keys = zoom (the slot change is cancelled, so the
+ * need no client mod: right-click = shutter, left-click = front/rear camera, swap-hands = video, mouse wheel / hotbar keys = zoom (the slot change is cancelled, so the
  * phone stays in hand), sneak = leave.
  *
  * <p><b>Zoom.</b> Primary method: one post effect per zoom level, swapped with {@code Player.postEffects()}.
  * Fallback (config, and automatically for players without the pack): a movement-speed modifier that makes the
  * client narrow its own FOV; limited to about 2x. Either way the photo is rendered with the zoom the player saw.
+ *
+ * <p><b>Video.</b> The swap-hands key starts and stops a recording. The chunks around the camera are copied once;
+ * then, {@code fps} times a second, the camera and every player and mob are noted and one frame is queued for
+ * rendering. Blocks therefore stand still in a video, everything alive moves.
  *
  * <p><b>Photo.</b> The server cannot see the client's screen, so it renders the picture itself: chunk snapshots are
  * copied on the main thread a few per tick, entity boxes are noted, and {@link RayTracer} does the rest on one
@@ -69,7 +74,8 @@ public final class CameraService implements Listener {
 
     /** Shows the "photo taken" screen; implemented by the UI. */
     public interface ResultScreen {
-        void show(Player player, int zoom, String location);
+        /** @param videoSeconds 0 for a photo, else the length of the recording */
+        void show(Player player, int zoom, String location, double videoSeconds);
     }
 
     private static final NamespacedKey FOV_MODIFIER = new NamespacedKey("phone", "camera_zoom");
@@ -83,12 +89,26 @@ public final class CameraService implements Listener {
         Key effect;
         Pending pending;
         boolean autoPrint;          // /phone shutter <player> print: skip the result screen
+        Recording recording;
+        boolean selfie;             // front camera: the picture is taken from in front of the player, looking back
     }
 
-    private record Pending(int[] rgb, long takenAt, Location where) {}
+    /** A finished photo (one frame) or video (several) waiting for Print. */
+    private record Pending(List<int[]> frames, long takenAt, Location where) {}
+
+    /** A video being recorded. */
+    private static final class Recording {
+        final Map<Long, ChunkSnapshot> chunks = new HashMap<>();
+        final List<CompletableFuture<int[]>> frames = new ArrayList<>();
+        Location start;
+        long startedAt;
+        int startTick = -1;         // -1 while the chunks are still being copied
+        boolean stopped;
+    }
 
     private final Plugin plugin;
-    private final Database db;
+    private final PlayerSettings settings;
+    private final SkinCache skins;
     private final PhoneItems items;
     private final PackService pack;
     private final PostFx postFx;
@@ -100,7 +120,6 @@ public final class CameraService implements Listener {
     /** Puts the player's phones back into their normal/unread look when the viewfinder closes. */
     private java.util.function.Consumer<Player> itemSync = p -> { };
     private final Map<UUID, Session> sessions = new HashMap<>();
-    private final Map<UUID, Double> fovs = new HashMap<>();
     private final ExecutorService renderer = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "phone-camera");
         t.setDaemon(true);
@@ -108,10 +127,11 @@ public final class CameraService implements Listener {
         return t;
     });
 
-    public CameraService(Plugin plugin, Database db, PhoneItems items, PackService pack, PostFx postFx, Sounds sounds,
-                         PhotoStore photos, PhoneConfig cfg, Lang lang) {
+    public CameraService(Plugin plugin, PlayerSettings settings, SkinCache skins, PhoneItems items, PackService pack, PostFx postFx,
+                         Sounds sounds, PhotoStore photos, PhoneConfig cfg, Lang lang) {
         this.plugin = plugin;
-        this.db = db;
+        this.settings = settings;
+        this.skins = skins;
         this.items = items;
         this.pack = pack;
         this.postFx = postFx;
@@ -156,13 +176,12 @@ public final class CameraService implements Listener {
 
     /** The vertical FOV photos of this player are rendered with at 1x. */
     public double fov(Player player) {
-        return fovs.getOrDefault(player.getUniqueId(), cfg.baseFov);
+        Double own = settings.fov(player.getUniqueId());
+        return own == null ? cfg.baseFov : own;
     }
 
     public void setFov(Player player, Double fov) {
-        if (fov == null) fovs.remove(player.getUniqueId());
-        else fovs.put(player.getUniqueId(), fov);
-        db.setFov(player.getUniqueId(), fov);
+        settings.setFov(player.getUniqueId(), fov);
     }
 
     /**
@@ -201,6 +220,7 @@ public final class CameraService implements Listener {
     public void exit(Player player) {
         Session s = sessions.remove(player.getUniqueId());
         if (s == null) return;
+        if (s.recording != null) s.recording.stopped = true;      // frames already queued are dropped with the session
         if (s.effect != null) postFx.set(player, s.effect, false);
         postFx.set(player, FLASH, false);
         AttributeInstance speed = player.getAttribute(Attribute.MOVEMENT_SPEED);
@@ -231,8 +251,17 @@ public final class CameraService implements Listener {
     }
 
     private void hint(Player player, Session s) {
-        player.sendActionBar(lang.get(s.capturing ? "camera.actionbar-capturing" : "camera.actionbar",
-                Lang.ph("zoom", cfg.zoomLevels.get(s.zoomIndex))));
+        Recording rec = s.recording;
+        if (rec != null && !rec.stopped) {
+            double seconds = rec.startTick < 0 ? 0 : (Bukkit.getCurrentTick() - rec.startTick) / 20.0;
+            player.sendActionBar(lang.get(rec.startTick < 0 ? "camera.actionbar-preparing" : "camera.actionbar-recording",
+                    Lang.ph("seconds", String.format(java.util.Locale.ROOT, "%.1f", seconds)), Lang.ph("max", cfg.videoMaxSeconds)));
+            return;
+        }
+        player.sendActionBar(lang.get(s.capturing ? "camera.actionbar-capturing"
+                        : cfg.videoEnabled ? "camera.actionbar" : "camera.actionbar-no-video",
+                Lang.ph("zoom", cfg.zoomLevels.get(s.zoomIndex)),
+                Lang.ph("lens", lang.get(s.selfie ? "camera.lens-front" : "camera.lens-rear"))));
     }
 
     private void tick() {
@@ -280,19 +309,23 @@ public final class CameraService implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
-        Player player = e.getPlayer();
         // a crash while zoomed must not leave the slow-down behind
-        AttributeInstance speed = player.getAttribute(Attribute.MOVEMENT_SPEED);
+        AttributeInstance speed = e.getPlayer().getAttribute(Attribute.MOVEMENT_SPEED);
         if (speed != null) speed.removeModifier(FOV_MODIFIER);
-        Tasks.onMain(plugin, db.fov(player.getUniqueId()), fov -> {
-            if (fov != null && player.isOnline()) fovs.put(player.getUniqueId(), fov);
-        });
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         exit(e.getPlayer());
-        fovs.remove(e.getPlayer().getUniqueId());
+    }
+
+    /** The swap-hands key starts and stops a video; the phone stays where it is. */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onSwapHands(PlayerSwapHandItemsEvent e) {
+        Session s = sessions.get(e.getPlayer().getUniqueId());
+        if (s == null) return;
+        e.setCancelled(true);
+        toggleRecording(e.getPlayer());
     }
 
     // ---- taking a picture -------------------------------------------------------------------------------------------
@@ -325,7 +358,70 @@ public final class CameraService implements Listener {
         }
         hint(player, s);
 
+        Location eye = lens(player, s);
+        World world = eye.getWorld();
+        Scene scene = scene(player, s, eye, cfg.maxDistance, cfg.dither);
+
+        ArrayDeque<int[]> wanted = chunksInView(scene);
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline() || sessions.get(player.getUniqueId()) != s) {
+                    cancel();
+                    s.capturing = false;
+                    return;
+                }
+                // copying a chunk is the only main-thread cost of a photo: a few per tick
+                copyChunks(world, wanted, scene.chunks);
+                if (!wanted.isEmpty()) return;
+                cancel();
+                CompletableFuture<int[]> render = CompletableFuture.supplyAsync(() -> RayTracer.render(scene), renderer);
+                render.whenComplete((rgb, error) -> {
+                    if (!plugin.isEnabled()) return;
+                    Bukkit.getScheduler().runTask(plugin, () -> developed(player, s, rgb == null ? null : List.of(rgb), error, now, eye));
+                });
+            }
+        }.runTaskTimer(plugin, 1L, 1L);
+    }
+
+    private void copyChunks(World world, ArrayDeque<int[]> wanted, Map<Long, ChunkSnapshot> into) {
+        for (int i = 0; i < cfg.chunksPerTick && !wanted.isEmpty(); i++) {
+            int[] c = wanted.poll();
+            if (world.isChunkLoaded(c[0], c[1])) {
+                into.put(Scene.chunkKey(c[0], c[1]), world.getChunkAt(c[0], c[1]).getChunkSnapshot(false, false, false));
+            }
+        }
+    }
+
+    /** How far in front of the face the front camera is held, in blocks. */
+    private static final double SELFIE_ARM = 2.2;
+
+    /** Left-click in the viewfinder: switch between the rear and the front camera. */
+    public void toggleSelfie(Player player) {
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null || s.capturing) return;
+        s.selfie = !s.selfie;
+        hint(player, s);
+    }
+
+    /**
+     * Where the lens is. The rear camera is the player's eyes. The front camera sits at arm's length in front of
+     * the face (closer if a wall is in the way) and looks back at the player.
+     */
+    private Location lens(Player player, Session s) {
         Location eye = player.getEyeLocation();
+        if (!s.selfie) return eye;
+        Vector dir = eye.getDirection();
+        var wall = eye.getWorld().rayTraceBlocks(eye, dir, SELFIE_ARM, org.bukkit.FluidCollisionMode.NEVER, true);
+        double reach = wall == null ? SELFIE_ARM : Math.max(0.3, wall.getHitPosition().distance(eye.toVector()) - 0.2);
+        Location lens = eye.clone().add(dir.multiply(reach));
+        lens.setYaw(eye.getYaw() + 180);
+        lens.setPitch(-eye.getPitch());
+        return lens;
+    }
+
+    /** Main thread: the camera and everything alive in front of it, as of this tick. Chunks are added by the caller. */
+    private Scene scene(Player player, Session s, Location eye, int maxDistance, boolean dither) {
         World world = eye.getWorld();
         Scene scene = new Scene();
         scene.eyeX = eye.getX();
@@ -342,43 +438,113 @@ public final class CameraService implements Listener {
                 right[2] * f.getX() - right[0] * f.getZ(),
                 right[0] * f.getY() - right[1] * f.getX()};
         scene.tanHalfFov = tanHalfFov(player, s);
-        scene.maxDistance = cfg.maxDistance;
-        scene.dither = cfg.dither;
+        scene.maxDistance = maxDistance;
+        scene.dither = dither;
         scene.minY = world.getMinHeight();
         scene.maxY = world.getMaxHeight();
         scene.environment = world.getEnvironment();
         scene.time = world.getTime();
         scene.storm = world.hasStorm();
-        if (cfg.renderEntities) captureEntities(player, eye, scene);
+        if (cfg.renderEntities) captureEntities(player, eye, scene, s.selfie);
+        return scene;
+    }
 
-        ArrayDeque<int[]> wanted = chunksInView(scene);
+    // ---- video ------------------------------------------------------------------------------------------------------
+
+    /** The swap-hands key, or /phone shutter <player> video. */
+    public void toggleRecording(Player player) {
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null) return;
+        if (s.recording != null) {
+            stopRecording(player, s);
+            return;
+        }
+        if (!cfg.videoEnabled || s.capturing) return;
+        long now = System.currentTimeMillis();
+        long wait = cfg.cooldownSeconds * 1000L - (now - s.lastShot);
+        if (wait > 0) {
+            player.sendActionBar(lang.get("camera.cooldown", Lang.ph("seconds", (wait + 999) / 1000)));
+            return;
+        }
+        Recording rec = new Recording();
+        rec.start = lens(player, s);
+        rec.startedAt = now;
+        s.recording = rec;
+        s.capturing = true;
+        s.lastShot = now;
+        s.pending = null;
+        hint(player, s);
+
+        // every chunk within reach, nearest first: the camera may turn while it records
+        World world = rec.start.getWorld();
+        int cx = rec.start.getBlockX() >> 4, cz = rec.start.getBlockZ() >> 4, reach = (cfg.videoMaxDistance + 15) >> 4;
+        List<int[]> around = new ArrayList<>();
+        for (int x = -reach; x <= reach; x++) {
+            for (int z = -reach; z <= reach; z++) around.add(new int[] {cx + x, cz + z});
+        }
+        around.sort(Comparator.comparingInt(c -> (c[0] - cx) * (c[0] - cx) + (c[1] - cz) * (c[1] - cz)));
+        ArrayDeque<int[]> wanted = new ArrayDeque<>(around.subList(0, Math.min(around.size(), cfg.maxChunks)));
+        int interval = Math.max(1, 20 / cfg.videoFps);
+        int maxFrames = cfg.videoMaxSeconds * cfg.videoFps;
         new BukkitRunnable() {
             @Override
             public void run() {
-                if (!player.isOnline() || sessions.get(player.getUniqueId()) != s) {
+                if (!player.isOnline() || sessions.get(player.getUniqueId()) != s || s.recording != rec || rec.stopped) {
                     cancel();
-                    s.capturing = false;
                     return;
                 }
-                // copying a chunk is the only main-thread cost of a photo: a few per tick
-                for (int i = 0; i < cfg.chunksPerTick && !wanted.isEmpty(); i++) {
-                    int[] c = wanted.poll();
-                    if (world.isChunkLoaded(c[0], c[1])) {
-                        scene.chunks.put(Scene.chunkKey(c[0], c[1]), world.getChunkAt(c[0], c[1]).getChunkSnapshot(false, false, false));
-                    }
+                if (!wanted.isEmpty()) {
+                    copyChunks(world, wanted, rec.chunks);
+                    return;
                 }
-                if (!wanted.isEmpty()) return;
-                cancel();
-                CompletableFuture<int[]> render = CompletableFuture.supplyAsync(() -> RayTracer.render(scene), renderer);
-                render.whenComplete((rgb, error) -> {
-                    if (!plugin.isEnabled()) return;
-                    Bukkit.getScheduler().runTask(plugin, () -> developed(player, s, rgb, error, now, eye));
-                });
+                if (player.getWorld() != world) {
+                    stopRecording(player, s);
+                    return;
+                }
+                int tick = Bukkit.getCurrentTick();
+                if (rec.startTick < 0) {
+                    rec.startTick = tick;
+                    sounds.play(player, Sounds.Cue.SEND);
+                }
+                if ((tick - rec.startTick) % interval != 0) return;
+                // one frame: this tick's camera and creatures over the frozen blocks; no dithering (it would
+                // flicker from frame to frame and bloat the map updates)
+                Scene scene = scene(player, s, lens(player, s), cfg.videoMaxDistance, false);
+                scene.chunks = rec.chunks;
+                rec.frames.add(CompletableFuture.supplyAsync(() -> RayTracer.render(scene), renderer));
+                hint(player, s);
+                if (rec.frames.size() >= maxFrames) stopRecording(player, s);
             }
         }.runTaskTimer(plugin, 1L, 1L);
     }
 
-    private void developed(Player player, Session s, int[] rgb, Throwable error, long takenAt, Location eye) {
+    private void stopRecording(Player player, Session s) {
+        Recording rec = s.recording;
+        if (rec == null || rec.stopped) return;
+        rec.stopped = true;
+        if (rec.frames.isEmpty()) {         // stopped before the first frame
+            s.recording = null;
+            s.capturing = false;
+            hint(player, s);
+            return;
+        }
+        sounds.play(player, Sounds.Cue.SHUTTER);
+        player.sendActionBar(lang.get("camera.actionbar-capturing"));
+        CompletableFuture.allOf(rec.frames.toArray(CompletableFuture[]::new)).whenComplete((nothing, error) -> {
+            if (!plugin.isEnabled()) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (s.recording == rec) s.recording = null;
+                List<int[]> frames = null;
+                if (error == null) {
+                    frames = new ArrayList<>();
+                    for (CompletableFuture<int[]> f : rec.frames) frames.add(f.join());
+                }
+                developed(player, s, frames, error, rec.startedAt, rec.start);
+            });
+        });
+    }
+
+    private void developed(Player player, Session s, List<int[]> frames, Throwable error, long takenAt, Location eye) {
         s.capturing = false;
         if (error != null) {
             plugin.getLogger().log(Level.SEVERE, "Rendering a photo failed", error);
@@ -386,7 +552,7 @@ public final class CameraService implements Listener {
             return;
         }
         if (!player.isOnline() || sessions.get(player.getUniqueId()) != s) return;
-        s.pending = new Pending(rgb, takenAt, eye);
+        s.pending = new Pending(frames, takenAt, eye);
         if (s.autoPrint) {
             s.autoPrint = false;
             print(player);
@@ -394,7 +560,7 @@ public final class CameraService implements Listener {
         }
         String location = cfg.locationInLore
                 ? eye.getWorld().getName() + "  " + eye.getBlockX() + ", " + eye.getBlockY() + ", " + eye.getBlockZ() : "";
-        resultScreen.show(player, cfg.zoomLevels.get(s.zoomIndex), location);
+        resultScreen.show(player, cfg.zoomLevels.get(s.zoomIndex), location, frames.size() > 1 ? frames.size() / (double) cfg.videoFps : 0);
     }
 
     /**
@@ -473,14 +639,19 @@ public final class CameraService implements Listener {
         return inside ? 0 : best;
     }
 
-    private void captureEntities(Player photographer, Location eye, Scene scene) {
+    private void captureEntities(Player photographer, Location eye, Scene scene, boolean includeSelf) {
         List<Entity> near = new ArrayList<>(eye.getWorld().getNearbyEntities(eye, cfg.maxDistance, cfg.maxDistance, cfg.maxDistance,
-                e -> e instanceof LivingEntity living && e != photographer && !living.isInvisible()
+                e -> e instanceof LivingEntity living && (includeSelf || e != photographer) && !living.isInvisible()
                         && e.getType() != EntityType.ARMOR_STAND
-                        && !(e instanceof Player p && (p.getGameMode() == GameMode.SPECTATOR || !photographer.canSee(p)))));
+                        && !(e instanceof Player p && p != photographer && (p.getGameMode() == GameMode.SPECTATOR || !photographer.canSee(p)))));
         near.sort(Comparator.comparingDouble(e -> e.getLocation().distanceSquared(eye)));
         for (int i = 0; i < near.size() && i < 64; i++) {
             Entity e = near.get(i);
+            if (e instanceof Player p) {
+                // players get the real model: skin, pose and limb swing
+                scene.figures.add(Figure.of(p, skins.pixels(p), skins.slim(p)));
+                continue;
+            }
             BoundingBox b = e.getBoundingBox();
             int[] c = colours(e);
             scene.entities.add(new Scene.Box(b.getMinX(), b.getMinY(), b.getMinZ(), b.getMaxX(), b.getMaxY(), b.getMaxZ(),
@@ -540,13 +711,14 @@ public final class CameraService implements Listener {
         if (needsPaper) items.takePhotoPaper(player);
         Pending p = s.pending;
         s.pending = null;
-        ItemStack photo = photos.create(player, p.rgb(), p.takenAt(), p.where());
+        ItemStack photo = p.frames().size() > 1 ? photos.createVideo(player, p.frames(), cfg.videoFps, p.takenAt(), p.where())
+                : photos.create(player, p.frames().getFirst(), p.takenAt(), p.where());
         Map<Integer, ItemStack> left = player.getInventory().addItem(photo);
         if (!left.isEmpty()) {
             for (ItemStack item : left.values()) player.getWorld().dropItemNaturally(player.getLocation(), item);
             player.sendMessage(lang.get("camera.printed-dropped"));
         } else {
-            player.sendMessage(lang.get("camera.printed"));
+            player.sendMessage(lang.get(p.frames().size() > 1 ? "camera.video-saved" : "camera.printed"));
         }
         return true;
     }

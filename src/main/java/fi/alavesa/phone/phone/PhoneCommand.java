@@ -70,14 +70,51 @@ public final class PhoneCommand {
                                                 .executes(ctx -> {
                                                     Player target = target(ctx);
                                                     return withKnown(ctx, (sender, known) -> {
-                                                        if (target.isOnline()) plugin.ui().openConversation(target, known.id(), 0);
+                                                        if (!target.isOnline()) return;
+                                                        plugin.ui().unlockFor(target);
+                                                        plugin.ui().openConversation(target, known.id(), 0);
                                                     });
                                                 })))))
                 .then(Commands.literal("shutter")
                         .requires(s -> s.getSender().hasPermission("phone.admin"))
                         .then(Commands.argument("player", ArgumentTypes.player())
                                 .executes(ctx -> shutter(target(ctx), false))
-                                .then(Commands.literal("print").executes(ctx -> shutter(target(ctx), true)))))
+                                .then(Commands.literal("print").executes(ctx -> shutter(target(ctx), true)))
+                                .then(Commands.literal("save").executes(ctx -> {
+                                    // prints the picture or video that is waiting on the result screen
+                                    Player target = target(ctx);
+                                    plugin.ui().close(target, true);
+                                    return plugin.camera().print(target) ? Command.SINGLE_SUCCESS : 0;
+                                }))
+                                .then(Commands.literal("selfie").executes(ctx -> {
+                                    plugin.camera().toggleSelfie(target(ctx));
+                                    return Command.SINGLE_SUCCESS;
+                                }))
+                                .then(Commands.literal("video").executes(ctx -> {
+                                    plugin.camera().toggleRecording(target(ctx));
+                                    return Command.SINGLE_SUCCESS;
+                                }))))
+                .then(Commands.literal("ui")
+                        .executes(ctx -> ui(ctx, "status"))
+                        .then(Commands.literal("auto").executes(ctx -> ui(ctx, "auto")))
+                        .then(Commands.literal("fancy").executes(ctx -> ui(ctx, "fancy")))
+                        .then(Commands.literal("plain").executes(ctx -> ui(ctx, "plain"))))
+                .then(Commands.literal("passcode")
+                        .requires(s -> s.getSender().hasPermission("phone.admin"))
+                        .then(Commands.literal("reset")
+                                .then(Commands.argument("name", StringArgumentType.word()).suggests(ONLINE)
+                                        .executes(ctx -> withKnown(ctx, (sender, known) -> {
+                                            plugin.settings().setPasscode(known.id(), null);
+                                            sender.sendMessage(plugin.lang().get("command.passcode-reset", Lang.ph("player", known.name())));
+                                        })))))
+                .then(Commands.literal("status")
+                        .requires(s -> s.getSender().hasPermission("phone.admin"))
+                        .executes(ctx -> {
+                            ctx.getSource().getSender().sendMessage(plugin.lang().get("command.status",
+                                    Lang.ph("delivery", plugin.pack().delivery()), Lang.ph("sha1", plugin.pack().sha1()),
+                                    Lang.ph("frames", plugin.photos().framesInMemory())));
+                            return Command.SINGLE_SUCCESS;
+                        }))
                 .then(Commands.literal("reload")
                         .requires(s -> s.getSender().hasPermission("phone.admin"))
                         .executes(ctx -> {
@@ -143,6 +180,8 @@ public final class PhoneCommand {
     }
 
     private int open(Player target, String screen) {
+        // an admin opening a phone for someone does not know their passcode and does not need it
+        plugin.ui().unlockFor(target);
         switch (screen) {
             case "messages" -> plugin.ui().openContacts(target, 0);
             case "camera" -> {
@@ -152,6 +191,18 @@ public final class PhoneCommand {
             }
             default -> plugin.ui().openHome(target);
         }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    /** /phone ui [auto|fancy|plain]: the player's own choice between the textured and the plain-text phone. */
+    private int ui(CommandContext<CommandSourceStack> ctx, String mode) {
+        Player self = player(ctx);
+        if (self == null) return 0;
+        if (!mode.equals("status")) plugin.settings().setUi(self.getUniqueId(), mode.equals("auto") ? null : mode);
+        String choice = plugin.settings().ui(self.getUniqueId());
+        self.sendMessage(plugin.lang().get("command.ui", Lang.ph("mode", choice == null ? "auto" : choice),
+                Lang.ph("pack", plugin.pack().describe(self)),
+                Lang.ph("result", plugin.pack().hasPack(self) ? "textured" : "plain text")));
         return Command.SINGLE_SUCCESS;
     }
 

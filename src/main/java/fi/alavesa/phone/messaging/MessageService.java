@@ -23,7 +23,8 @@ import org.bukkit.plugin.Plugin;
  */
 public final class MessageService {
 
-    public enum SendResult { OK, EMPTY, TOO_LONG, RATE_LIMITED, MUTED, BLOCKED, YOU_BLOCKED, SELF, CANCELLED, NO_PERMISSION, ERROR }
+    public enum SendResult { OK, EMPTY, TOO_LONG, RATE_LIMITED, MUTED, BLOCKED, YOU_BLOCKED, SELF, CANCELLED, NO_PERMISSION, ERROR,
+        NOT_YOURS, TOO_OLD, DISABLED }
 
     /** What happens around a message besides storing it (item state, sound, hint, open dialogs). */
     public interface Notifier {
@@ -33,6 +34,9 @@ public final class MessageService {
 
         /** The unread count of an online player changed (phone item state, badges). */
         void unreadChanged(Player player);
+
+        /** A message in the conversation between {@code player} and {@code partner} was edited or deleted. */
+        void conversationChanged(Player player, UUID partner);
 
         /** A player joined with messages that arrived while they were offline. */
         void waitingOnJoin(Player player, int unread);
@@ -203,10 +207,91 @@ public final class MessageService {
                     // offline recipients need nothing here: the row waits unread and join() announces it
                     unread.merge(recipientId, 1, Integer::sum);
                     notifier.unreadChanged(recipient);
-                    notifier.incoming(recipient, new Message(id, senderId, recipientId, body, now, false), senderName);
+                    notifier.incoming(recipient, new Message(id, senderId, recipientId, body, now, false, false), senderName);
                 }
                 done.accept(SendResult.OK);
             });
+        });
+    }
+
+    // ---- editing and deleting ---------------------------------------------------------------------------------------
+
+    /** May {@code player} still change this message? {@link SendResult#OK} when so. */
+    public SendResult mayChange(Player player, Message message, boolean delete) {
+        if (delete ? !cfg.allowDelete : !cfg.allowEdit) return SendResult.DISABLED;
+        if (message == null || !message.sender().equals(player.getUniqueId())) return SendResult.NOT_YOURS;
+        if (cfg.editWindowMinutes > 0 && System.currentTimeMillis() - message.sentAt() > cfg.editWindowMinutes * 60_000L) {
+            return SendResult.TOO_OLD;
+        }
+        return SendResult.OK;
+    }
+
+    /** Replaces the text of one of the player's own messages. {@code done} runs on the main thread. */
+    public void edit(Player player, long id, String recipientName, String typed, Consumer<SendResult> done) {
+        if (!player.hasPermission("phone.message")) {
+            done.accept(SendResult.NO_PERMISSION);
+            return;
+        }
+        if (typed != null && typed.codePointCount(0, typed.length()) > cfg.maxLength) {
+            done.accept(SendResult.TOO_LONG);
+            return;
+        }
+        String body = TextWrapper.sanitize(typed, cfg.maxLength);
+        if (body.isEmpty()) {
+            done.accept(SendResult.EMPTY);
+            return;
+        }
+        if (isMuted(player.getUniqueId())) {
+            done.accept(SendResult.MUTED);
+            return;
+        }
+        Tasks.onMain(plugin, db.message(id), message -> {
+            SendResult allowed = mayChange(player, message, false);
+            if (allowed != SendResult.OK) {
+                done.accept(allowed);
+                return;
+            }
+            if (body.equals(message.body())) {
+                done.accept(SendResult.OK);
+                return;
+            }
+            PhoneMessageEvent event = new PhoneMessageEvent(player, message.recipient(), recipientName, body, true);
+            Bukkit.getPluginManager().callEvent(event);
+            String finalBody = TextWrapper.sanitize(event.getMessage(), cfg.maxLength);
+            if (event.isCancelled() || finalBody.isEmpty()) {
+                done.accept(SendResult.CANCELLED);
+                return;
+            }
+            Tasks.onMain(plugin, db.editMessage(id, player.getUniqueId(), finalBody), changed -> {
+                if (changed) touched(player.getUniqueId(), message.recipient());
+                done.accept(changed ? SendResult.OK : SendResult.NOT_YOURS);
+            });
+        });
+    }
+
+    /** Deletes one of the player's own messages for both sides. {@code done} runs on the main thread. */
+    public void delete(Player player, long id, Consumer<SendResult> done) {
+        Tasks.onMain(plugin, db.message(id), message -> {
+            SendResult allowed = mayChange(player, message, true);
+            if (allowed != SendResult.OK) {
+                done.accept(allowed);
+                return;
+            }
+            Tasks.onMain(plugin, db.deleteMessage(id, player.getUniqueId()), removed -> {
+                if (removed) touched(player.getUniqueId(), message.recipient());
+                done.accept(removed ? SendResult.OK : SendResult.NOT_YOURS);
+            });
+        });
+    }
+
+    /** The other side of an edited or deleted message: recount their unread messages, refresh what they look at. */
+    private void touched(UUID sender, UUID recipientId) {
+        Player recipient = Bukkit.getPlayer(recipientId);
+        if (recipient == null) return;
+        Tasks.onMain(plugin, db.unreadCount(recipientId), count -> {
+            if (!recipient.isOnline()) return;
+            unreadIs(recipient, count);
+            notifier.conversationChanged(recipient, sender);
         });
     }
 }

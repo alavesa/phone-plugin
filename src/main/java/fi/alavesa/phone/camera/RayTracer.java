@@ -11,6 +11,8 @@ import org.bukkit.block.data.BlockData;
  * Renders a {@link Scene} into a 128x128 picture by casting one ray per pixel through the chunk snapshots.
  * Pure computation on immutable data: safe on any thread, never touches the live world.
  *
+ * <p>Players are {@link Figure}s: six rotated boxes textured from the skin. Other entities are plain boxes.
+ *
  * <p>Per ray: a voxel walk (Amanatides and Woo) from the eye along the view direction until a solid block, an
  * entity box, the edge of the captured chunks or the maximum distance. Colours are the blocks' map colours, shaded
  * by the face that was hit, by the stored sky/block light next to it and by the time of day; water is looked
@@ -91,14 +93,28 @@ final class RayTracer {
     }
 
     private int trace(double dx, double dy, double dz) {
-        // nearest entity along the ray: blocks behind it are never looked at
+        // nearest entity or player along the ray: blocks behind it are never looked at
         double limit = s.maxDistance;
-        Scene.Box hitBox = null;
+        int entityRgb = -1;
         for (Scene.Box box : s.entities) {
             double t = intersect(box, dx, dy, dz);
             if (t >= 0 && t < limit) {
                 limit = t;
-                hitBox = box;
+                entityRgb = scale(s.eyeY + dy * t >= box.headFromY() ? box.headRgb() : box.bodyRgb(), 0.55 + 0.45 * ambient());
+            }
+        }
+        for (Figure figure : s.figures) {
+            // quick reject: does the ray pass the figure's bounding sphere at all?
+            double ox = figure.cx - s.eyeX, oy = figure.cy - s.eyeY, oz = figure.cz - s.eyeZ;
+            double along = ox * dx + oy * dy + oz * dz;
+            if (along < -figure.radius || along - figure.radius > limit) continue;
+            if (ox * ox + oy * oy + oz * oz - along * along > figure.radius * figure.radius) continue;
+            for (Figure.Part part : figure.parts) {
+                double t = intersect(figure, part, dx, dy, dz, limit);
+                if (t >= 0) {
+                    limit = t;
+                    entityRgb = hitRgb;
+                }
             }
         }
 
@@ -176,11 +192,7 @@ final class RayTracer {
         }
 
         if (waterEnter >= 0) waterDepth += Math.min(t, limit) - waterEnter;
-        if (hitBox != null && !reachedEdge && t > limit) {
-            double hitY = s.eyeY + dy * limit;
-            int c = scale(hitY >= hitBox.headFromY() ? hitBox.headRgb() : hitBox.bodyRgb(), 0.55 + 0.45 * ambient());
-            return finish(c, limit, waterDepth, dx, dy, dz);
-        }
+        if (entityRgb >= 0 && !reachedEdge && t > limit) return finish(entityRgb, limit, waterDepth, dx, dy, dz);
         int sky = sky(dx, dy, dz);
         if (waterDepth > 0) return mix(sky, scale(WATER_RGB, 0.35 + 0.65 * ambient()), 1 - Math.exp(-0.3 * waterDepth));
         return sky;
@@ -240,6 +252,48 @@ final class RayTracer {
             }
         }
         return c;
+    }
+
+    /** Colour of the last successful {@link #intersect(Figure, Figure.Part, double, double, double, double)}. */
+    private int hitRgb;
+
+    /**
+     * Distance along the ray to one box of a player model if it is nearer than {@code limit}, else -1. The ray is
+     * moved into the box's own axes, where the box is axis-aligned; the face it enters through picks the skin pixel.
+     */
+    private double intersect(Figure figure, Figure.Part p, double dx, double dy, double dz, double limit) {
+        double rx = s.eyeX - p.centre[0], ry = s.eyeY - p.centre[1], rz = s.eyeZ - p.centre[2];
+        double[] o = {rx * p.ax[0] + ry * p.ax[1] + rz * p.ax[2], rx * p.ay[0] + ry * p.ay[1] + rz * p.ay[2],
+                rx * p.az[0] + ry * p.az[1] + rz * p.az[2]};
+        double[] d = {dx * p.ax[0] + dy * p.ax[1] + dz * p.ax[2], dx * p.ay[0] + dy * p.ay[1] + dz * p.ay[2],
+                dx * p.az[0] + dy * p.az[1] + dz * p.az[2]};
+        double[] half = {p.hx, p.hy, p.hz};
+        double tMin = 0, tMax = limit;
+        int axis = -1;
+        boolean positive = false;
+        for (int i = 0; i < 3; i++) {
+            if (Math.abs(d[i]) < 1e-9) {
+                if (Math.abs(o[i]) > half[i]) return -1;
+                continue;
+            }
+            double t1 = (-half[i] - o[i]) / d[i], t2 = (half[i] - o[i]) / d[i];
+            double near = Math.min(t1, t2);
+            if (near > tMin) {
+                tMin = near;
+                axis = i;
+                positive = d[i] < 0;        // moving toward -axis means the ray came in through the + face
+            }
+            tMax = Math.min(tMax, Math.max(t1, t2));
+            if (tMin > tMax) return -1;
+        }
+        if (axis < 0) return -1;            // the eye is inside the box
+        int rgb = Figure.texel(figure.skin, p, axis, positive, o[0] + d[0] * tMin, o[1] + d[1] * tMin, o[2] + d[2] * tMin);
+        // light: the face's world normal against "up", like the blocks' face shading, times the light at the player
+        double[] n = axis == 0 ? p.ax : axis == 1 ? p.ay : p.az;
+        double up = (positive ? 1 : -1) * n[1];
+        double level = Math.max(figure.light, s.environment == World.Environment.NORMAL ? skyFactor * 0.9 : 0.4);
+        hitRgb = scale(rgb, (0.74 + 0.26 * up) * (0.25 + 0.75 * level));
+        return tMin;
     }
 
     /** Distance along the ray to the box, or -1. The eye is at the scene's eye position. */

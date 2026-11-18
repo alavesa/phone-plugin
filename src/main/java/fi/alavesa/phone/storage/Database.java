@@ -67,9 +67,23 @@ public final class Database {
                 st.execute("CREATE TABLE IF NOT EXISTS mutes (uuid TEXT PRIMARY KEY, until INTEGER NOT NULL)");
                 st.execute("CREATE TABLE IF NOT EXISTS photos (map_id INTEGER PRIMARY KEY, photographer TEXT NOT NULL, "
                         + "photographer_name TEXT NOT NULL, taken_at INTEGER NOT NULL, world TEXT, x INTEGER, y INTEGER, z INTEGER)");
+                // columns added after 1.0.0; SQLite has no "ADD COLUMN IF NOT EXISTS"
+                addColumn(st, "messages", "edited INTEGER NOT NULL DEFAULT 0");
+                addColumn(st, "players", "ui TEXT");
+                addColumn(st, "players", "pass_hash TEXT");
+                addColumn(st, "players", "pass_salt TEXT");
+                addColumn(st, "photos", "frames INTEGER NOT NULL DEFAULT 0");
             }
             return null;
         }).get();
+    }
+
+    private static void addColumn(Statement st, String table, String definition) throws SQLException {
+        try {
+            st.execute("ALTER TABLE " + table + " ADD COLUMN " + definition);
+        } catch (SQLException e) {
+            if (!String.valueOf(e.getMessage()).contains("duplicate column")) throw e;
+        }
     }
 
     /** Finishes queued writes (up to 10 s) and closes the file. Blocks: called from onDisable. */
@@ -126,7 +140,7 @@ public final class Database {
 
     private static Message message(ResultSet rs) throws SQLException {
         return new Message(rs.getLong("id"), UUID.fromString(rs.getString("sender")), UUID.fromString(rs.getString("recipient")),
-                rs.getString("body"), rs.getLong("sent_at"), rs.getInt("read") != 0);
+                rs.getString("body"), rs.getLong("sent_at"), rs.getInt("read") != 0, rs.getInt("edited") != 0);
     }
 
     private static final String PAIR = "((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))";
@@ -149,30 +163,24 @@ public final class Database {
     }
 
     /**
-     * One page of the conversation between {@code viewer} and {@code partner}, oldest message first, and marks
+     * A window of the conversation between {@code viewer} and {@code partner}, oldest message first, and marks
      * everything the partner sent as read.
      *
-     * @param cursor     0 = the latest messages; a positive id = the messages just before it (older);
-     *                   a negative id = the messages just after -id (newer)
+     * @param skip       how many of the newest messages to leave out (0 = the end of the conversation)
      * @param maxCount   at most this many messages
      * @param lineBudget at most this many text lines, measured with {@code lines} (always at least one message)
      */
-    public CompletableFuture<ConversationPage> loadPage(UUID viewer, UUID partner, long cursor, int maxCount, int lineBudget,
+    public CompletableFuture<ConversationPage> loadPage(UUID viewer, UUID partner, int skip, int maxCount, int lineBudget,
                                                         ToIntFunction<String> lines) {
         return async("load conversation", () -> {
-            boolean forward = cursor < 0;
-            String sql = "SELECT * FROM messages WHERE " + PAIR
-                    + (cursor > 0 ? " AND id < ?" : forward ? " AND id > ?" : "")
-                    + " ORDER BY id " + (forward ? "ASC" : "DESC") + " LIMIT ?";
             List<Message> picked = new ArrayList<>();
-            try (PreparedStatement ps = db.prepareStatement(sql)) {
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM messages WHERE " + PAIR + " ORDER BY id DESC LIMIT ? OFFSET ?")) {
                 pair(ps, 1, viewer, partner);
-                int at = 5;
-                if (cursor != 0) ps.setLong(at++, Math.abs(cursor));
-                ps.setInt(at, maxCount);
+                ps.setInt(5, maxCount);
+                ps.setInt(6, Math.max(0, skip));
                 int used = 0;
                 try (ResultSet rs = ps.executeQuery()) {
-                    // rows come nearest-to-the-cursor first: keep taking until the page is full
+                    // newest first: keep taking older ones until the window is full
                     while (rs.next()) {
                         Message m = message(rs);
                         int need = lines.applyAsInt(m.body());
@@ -182,13 +190,9 @@ public final class Database {
                     }
                 }
             }
-            if (!forward) Collections.reverse(picked);
-            boolean older = false;
-            boolean newer = false;
-            if (!picked.isEmpty()) {
-                older = exists(viewer, partner, "id < ?", picked.getFirst().id());
-                newer = exists(viewer, partner, "id > ?", picked.getLast().id());
-            }
+            Collections.reverse(picked);
+            boolean older = !picked.isEmpty() && exists(viewer, partner, "id < ?", picked.getFirst().id());
+            boolean newer = !picked.isEmpty() && exists(viewer, partner, "id > ?", picked.getLast().id());
             int marked;
             try (PreparedStatement ps = db.prepareStatement("UPDATE messages SET read = 1 WHERE recipient = ? AND sender = ? AND read = 0")) {
                 ps.setString(1, viewer.toString());
@@ -196,6 +200,57 @@ public final class Database {
                 marked = ps.executeUpdate();
             }
             return new ConversationPage(List.copyOf(picked), older, newer, marked, unread(viewer));
+        });
+    }
+
+    /** The newest messages {@code sender} wrote to {@code recipient}, newest first. */
+    public CompletableFuture<List<Message>> ownMessages(UUID sender, UUID recipient, int limit) {
+        return async("load own messages", () -> {
+            List<Message> out = new ArrayList<>();
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM messages WHERE sender = ? AND recipient = ? ORDER BY id DESC LIMIT ?")) {
+                ps.setString(1, sender.toString());
+                ps.setString(2, recipient.toString());
+                ps.setInt(3, limit);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) out.add(message(rs));
+                }
+            }
+            return out;
+        });
+    }
+
+    /** One message, or null. */
+    public CompletableFuture<Message> message(long id) {
+        return async("load message", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM messages WHERE id = ?")) {
+                ps.setLong(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? message(rs) : null;
+                }
+            }
+        });
+    }
+
+    /** Replaces the text of a message its sender wrote. True when a row changed. */
+    public CompletableFuture<Boolean> editMessage(long id, UUID sender, String body) {
+        return async("edit message", () -> {
+            try (PreparedStatement ps = db.prepareStatement("UPDATE messages SET body = ?, edited = 1 WHERE id = ? AND sender = ?")) {
+                ps.setString(1, body);
+                ps.setLong(2, id);
+                ps.setString(3, sender.toString());
+                return ps.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /** Deletes a message its sender wrote, for both sides. True when a row was removed. */
+    public CompletableFuture<Boolean> deleteMessage(long id, UUID sender) {
+        return async("delete message", () -> {
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM messages WHERE id = ? AND sender = ?")) {
+                ps.setLong(1, id);
+                ps.setString(2, sender.toString());
+                return ps.executeUpdate() > 0;
+            }
         });
     }
 
@@ -290,30 +345,47 @@ public final class Database {
         });
     }
 
-    /** The camera FOV a player chose with /phone fov, or null. */
-    public CompletableFuture<Double> fov(UUID id) {
-        return async("load fov", () -> {
-            try (PreparedStatement ps = db.prepareStatement("SELECT fov FROM players WHERE uuid = ?")) {
+    /** Everything stored about one player besides their messages; all fields null for a player without settings. */
+    public record PlayerData(Double fov, String ui, String passHash, String passSalt) {
+        public static final PlayerData EMPTY = new PlayerData(null, null, null, null);
+    }
+
+    public CompletableFuture<PlayerData> playerData(UUID id) {
+        return async("load player data", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT fov, ui, pass_hash, pass_salt FROM players WHERE uuid = ?")) {
                 ps.setString(1, id.toString());
                 try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) return null;
-                    double v = rs.getDouble(1);
-                    return rs.wasNull() ? null : v;
+                    if (!rs.next()) return PlayerData.EMPTY;
+                    double fov = rs.getDouble(1);
+                    return new PlayerData(rs.wasNull() ? null : fov, rs.getString(2), rs.getString(3), rs.getString(4));
                 }
             }
         });
     }
 
-    public CompletableFuture<Void> setFov(UUID id, Double fov) {
-        return async("save fov", () -> {
-            try (PreparedStatement ps = db.prepareStatement("UPDATE players SET fov = ? WHERE uuid = ?")) {
-                if (fov == null) ps.setNull(1, java.sql.Types.REAL);
-                else ps.setDouble(1, fov);
-                ps.setString(2, id.toString());
+    private CompletableFuture<Void> setPlayerColumns(String what, String sql, UUID id, Object... values) {
+        return async(what, () -> {
+            try (PreparedStatement ps = db.prepareStatement(sql)) {
+                for (int i = 0; i < values.length; i++) ps.setObject(i + 1, values[i]);
+                ps.setString(values.length + 1, id.toString());
                 ps.executeUpdate();
             }
             return null;
         });
+    }
+
+    public CompletableFuture<Void> setFov(UUID id, Double fov) {
+        return setPlayerColumns("save fov", "UPDATE players SET fov = ? WHERE uuid = ?", id, fov);
+    }
+
+    /** @param ui "fancy", "plain" or null for automatic */
+    public CompletableFuture<Void> setUi(UUID id, String ui) {
+        return setPlayerColumns("save ui mode", "UPDATE players SET ui = ? WHERE uuid = ?", id, ui);
+    }
+
+    /** Stores a salted passcode hash; both null removes the passcode. */
+    public CompletableFuture<Void> setPasscode(UUID id, String hash, String salt) {
+        return setPlayerColumns("save passcode", "UPDATE players SET pass_hash = ?, pass_salt = ? WHERE uuid = ?", id, hash, salt);
     }
 
     // ---- blocks and mutes -------------------------------------------------------------------------------------------
@@ -388,10 +460,13 @@ public final class Database {
 
     // ---- photos -----------------------------------------------------------------------------------------------------
 
-    public CompletableFuture<Void> insertPhoto(int mapId, UUID photographer, String name, long takenAt, String world, int x, int y, int z) {
+    /** @param frames 0 for a photo, the number of frames for a video */
+    public CompletableFuture<Void> insertPhoto(int mapId, UUID photographer, String name, long takenAt, String world, int x, int y, int z,
+                                               int frames) {
         return async("save photo", () -> {
             try (PreparedStatement ps = db.prepareStatement("INSERT OR REPLACE INTO photos (map_id, photographer, photographer_name, "
-                    + "taken_at, world, x, y, z) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    + "taken_at, world, x, y, z, frames) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                ps.setInt(9, frames);
                 ps.setInt(1, mapId);
                 ps.setString(2, photographer.toString());
                 ps.setString(3, name);
@@ -406,12 +481,12 @@ public final class Database {
         });
     }
 
-    /** Map ids of every stored photo. Blocks: called once from onEnable. */
-    public Set<Integer> loadPhotoIds() throws Exception {
+    /** Map id -> frame count (0 = photo) of everything printed. Blocks: called once from onEnable. */
+    public Map<Integer, Integer> loadPhotoIds() throws Exception {
         return async("load photos", () -> {
-            Set<Integer> out = new HashSet<>();
-            try (Statement st = db.createStatement(); ResultSet rs = st.executeQuery("SELECT map_id FROM photos")) {
-                while (rs.next()) out.add(rs.getInt(1));
+            Map<Integer, Integer> out = new HashMap<>();
+            try (Statement st = db.createStatement(); ResultSet rs = st.executeQuery("SELECT map_id, frames FROM photos")) {
+                while (rs.next()) out.put(rs.getInt(1), rs.getInt(2));
             }
             return out;
         }).get();

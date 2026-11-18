@@ -46,6 +46,10 @@ TAIL_W = 2               # the little tail on the last row of a bubble
 TILE_WIDTHS = [1, 2, 4, 8, 16, 32, 64, 128]
 SPACE_POWERS = 10        # spaces of +-1, 2, 4 ... 512 px
 ZOOM_LEVELS = [1, 2, 3, 4, 6, 8, 12, 16]   # camera_<zoom>.json post effects that exist in the pack
+APP_BUTTON_W = 56        # width of an app button on the home screen (the vanilla button under the app tile)
+APP_ICON = 32            # app icon, drawn above its button
+APP_ICON_GAP = 2         # px between the icon and the button
+BIG_SCALE = 3            # lock-screen clock: the vanilla digits drawn this many times larger
 
 T = (0, 0, 0, 0)
 WHITE = (255, 255, 255, 255)
@@ -187,8 +191,28 @@ class FontBuilder:
             # the client's formula: (int)(0.5 + width * height / cell_height) + 1
             chars += self.alloc(name, int(0.5 + width * height / cell_h) + 1)
         save(os.path.join(TEX_FONT, file_name), img)
+        assert ascent <= height, "%s: the client rejects a font whose ascent (%d) is larger than its height (%d)" % (
+            file_name, ascent, height)
         self.providers.append({"type": "bitmap", "file": "phone:font/" + file_name, "height": height,
                                "ascent": ascent, "chars": [chars]})
+
+    def big_digits(self):
+        """The lock-screen clock: the vanilla digit glyphs, scaled by the provider's height (no texture of our own).
+
+        ascii.png is a 16x16 grid of 8 px cells; row 3 holds 0-9 and the colon. Every other cell is skipped."""
+        rows = []
+        for r in range(16):
+            row = ""
+            for c in range(16):
+                if r == 3 and c <= 10:
+                    name = "big." + ("colon" if c == 10 else str(c))
+                    width = 1 if c == 10 else 5         # pixel widths of the vanilla glyphs
+                    row += self.alloc(name, int(0.5 + width * BIG_SCALE) + 1)
+                else:
+                    row += "\u0000"
+            rows.append(row)
+        self.providers.append({"type": "bitmap", "file": "minecraft:font/ascii.png", "height": 8 * BIG_SCALE,
+                               "ascent": 7 * BIG_SCALE, "chars": rows})
 
     def spaces(self):
         advances = {}
@@ -325,6 +349,84 @@ def icon_contacts():
     return img
 
 
+def app_tile(draw_logo, colour):
+    """An app on the home screen: a round icon with the label area of the button underneath.
+
+    The glyph is drawn as part of the button's label, 1 px inside the vanilla button: the lower 18 rows cover the
+    grey button face with a dark pill for the label (the button's 1 px border stays visible and still lights up on
+    hover), the icon sits above the button, over the bottom of the screen text.
+    """
+    w, icon_rows = APP_BUTTON_W - 2, APP_ICON + APP_ICON_GAP
+    img = blank(w, icon_rows + 19)
+    x0 = (w - APP_ICON) // 2
+    dark = tuple(int(c * 0.72) for c in colour) + (255,)
+    disc(img, x0 + 15.5, 15.5, 15.6, dark)
+    disc(img, x0 + 15.5, 15.5, 14.6, colour + (255,))
+    # soft highlight on the upper left of the disc
+    light = tuple(min(255, int(c * 1.18 + 14)) for c in colour) + (255,)
+    for y in range(3, 14):
+        for x in range(x0 + 4, x0 + 16):
+            if img[y][x][:3] == colour and (x - x0 - 15.5) ** 2 + (y - 15.5) ** 2 > 10.5 ** 2 and x + y < x0 + 21:
+                img[y][x] = light
+    draw_logo(img, x0)
+    # label area: rows icon_rows+1 .. icon_rows+18 = the inside of the 20 px button
+    rect(img, 0, icon_rows + 1, w - 1, icon_rows + 18, (18, 21, 28, 255))
+    rounded(img, 1, icon_rows + 2, w - 2, icon_rows + 17, 3, (38, 44, 58, 255))
+    return img
+
+
+def logo_messages(img, x0):
+    rounded(img, x0 + 7, 8, x0 + 24, 20, 3, WHITE)
+    for (x, y) in ((9, 21), (10, 21), (11, 21), (9, 22), (10, 22), (9, 23)):
+        img[y][x0 + x] = WHITE
+    for x in (11, 15, 19):
+        rect(img, x0 + x, 13, x0 + x + 1, 14, (52, 199, 89, 255))
+
+
+def logo_camera(img, x0):
+    body = (240, 243, 248, 255)
+    rounded(img, x0 + 6, 10, x0 + 25, 23, 2, body)
+    rect(img, x0 + 12, 7, x0 + 19, 9, body)
+    disc(img, x0 + 15.5, 16.5, 4.6, (52, 58, 74, 255))
+    disc(img, x0 + 15.5, 16.5, 2.6, (110, 190, 255, 255))
+    img[15][x0 + 14] = WHITE
+    rect(img, x0 + 21, 12, x0 + 22, 13, (255, 190, 70, 255))
+
+
+def logo_settings(img, x0):
+    cog = (240, 243, 248, 255)
+    cx, cy = x0 + 15.5, 15.5
+    for y in range(32):
+        for x in range(x0, x0 + 32):
+            dx, dy = x - cx, y - cy
+            r = math.hypot(dx, dy)
+            ang = math.atan2(dy, dx)
+            tooth = math.cos(ang * 8) > 0.25
+            if 3.4 < r <= (10.6 if tooth else 8.2):
+                img[y][x] = cog
+
+
+def badge(text):
+    """Unread badge on an app icon: a red disc with a 3x5 pixel number."""
+    digits = {"1": ["010", "110", "010", "010", "111"], "2": ["110", "001", "010", "100", "111"],
+              "3": ["110", "001", "010", "001", "110"], "4": ["101", "101", "111", "001", "001"],
+              "5": ["111", "100", "110", "001", "110"], "6": ["011", "100", "110", "101", "010"],
+              "7": ["111", "001", "010", "010", "010"], "8": ["010", "101", "010", "101", "010"],
+              "9": ["010", "101", "011", "001", "110"], "+": ["000", "010", "111", "010", "000"]}
+    img = blank(16, 11)
+    w = 11 if len(text) == 1 else 15
+    rounded(img, 0, 0, w - 1, 10, 5, (120, 12, 18, 255))
+    rounded(img, 1, 1, w - 2, 9, 4, (232, 40, 46, 255))
+    x = (w - (len(text) * 4 - 1)) // 2
+    for ch in text:
+        for ry, row in enumerate(digits[ch]):
+            for rx, c in enumerate(row):
+                if c == "1":
+                    img[3 + ry][x + rx] = WHITE
+        x += 4
+    return img
+
+
 def small_glyphs():
     """8x8 monochrome marks (white; tinted by the text colour)."""
     def grid(rows):
@@ -336,8 +438,14 @@ def small_glyphs():
     back = grid(["........", "...#....", "..#.....", ".#####..", "..#.....", "...#....", "........", "........"])
     cam = grid(["........", "..##....", ".######.", ".#.##.#.", ".#.##.#.", ".######.", "........", "........"])
     clock = grid(["........", "..###...", ".#.#.#..", ".#.##.#.".replace("#.#.", "#.#.")[:8], ".#...#..", "..###...", "........", "........"])
+    up = grid(["........", "...#....", "..###...", ".#####..", "...#....", "...#....", "........", "........"])
+    down = grid(["........", "...#....", "...#....", ".#####..", "..###...", "...#....", "........", "........"])
+    lock = grid(["........", "..###...", ".#...#..", ".#####..", ".##.##..", ".#####..", "........", "........"])
+    pencil = grid(["........", ".....##.", "....###.", "...###..", "..###...", ".###....", ".##.....", "........"])
+    rec = grid(["........", "..###...", ".#####..", ".#####..", ".#####..", "..###...", "........", "........"])
     return [("mark.dot", dot), ("mark.tick", tick), ("mark.ticks", ticks), ("mark.back", back), ("mark.camera", cam),
-            ("mark.clock", clock)]
+            ("mark.clock", clock), ("mark.up", up), ("mark.down", down), ("mark.lock", lock), ("mark.pencil", pencil),
+            ("mark.rec", rec)]
 
 
 def build_font():
@@ -353,6 +461,20 @@ def build_font():
     fb.sheet("icons.png", [("icon.messages", icon_messages()), ("icon.camera", icon_camera()),
                            ("icon.contacts", icon_contacts())], 16, 16, 16, 7 + 4)
     fb.sheet("marks.png", small_glyphs(), 8, 8, 8, 7)
+    # home-screen apps: the tile hangs from 40 px above the label text down to the bottom of the button
+    tile_h = APP_ICON + APP_ICON_GAP + 19
+    tile_ascent = 7 + 6 + APP_ICON + APP_ICON_GAP
+    fb.sheet("apps.png", [("app.messages", app_tile(logo_messages, (52, 199, 89))),
+                          ("app.camera", app_tile(logo_camera, (96, 104, 124))),
+                          ("app.settings", app_tile(logo_settings, (72, 132, 240)))],
+             APP_BUTTON_W - 2, tile_h, tile_h, tile_ascent)
+    # the badge sits 2 px above the icon's top. A glyph may not have an ascent larger than its height, so the
+    # badge cell is as tall as its ascent, with the art in the top rows
+    badge_h = tile_ascent + 2
+    fb.sheet("badges.png", [("badge.%s" % t, badge(t) + blank(16, badge_h - 11))
+                            for t in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "9+")],
+             16, badge_h, badge_h, badge_h)
+    fb.big_digits()
     fb.spaces()
     path = os.path.join(ASSETS, "font", "ui.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -379,6 +501,9 @@ def write_glyph_table(fb):
         f.write("layout.tail_width=%d\n" % TAIL_W)
         f.write("layout.tile_widths=%s\n" % ",".join(str(w) for w in TILE_WIDTHS))
         f.write("layout.space_powers=%d\n" % SPACE_POWERS)
+        f.write("layout.app_button_width=%d\n" % APP_BUTTON_W)
+        f.write("layout.app_icon_rows=%d\n" % (APP_ICON + APP_ICON_GAP))
+        f.write("layout.big_scale=%d\n" % BIG_SCALE)
         f.write("camera.zoom_levels=%s\n" % ",".join(str(z) for z in ZOOM_LEVELS))
 
 

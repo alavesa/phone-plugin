@@ -23,14 +23,28 @@ public final class Lang {
     private final Map<String, String> text = new HashMap<>();
 
     public Lang(Plugin plugin, String language) {
-        if (plugin.getResource("lang/en.yml") != null && !new File(plugin.getDataFolder(), "lang/en.yml").exists()) {
-            plugin.saveResource("lang/en.yml", false);
-        }
+        int bundled = 0;
         try (InputStream in = plugin.getResource("lang/en.yml")) {
-            if (in != null) read(YamlConfiguration.loadConfiguration(new InputStreamReader(in, StandardCharsets.UTF_8)));
+            if (in != null) {
+                YamlConfiguration yaml = YamlConfiguration.loadConfiguration(new InputStreamReader(in, StandardCharsets.UTF_8));
+                bundled = yaml.getInt("version", 0);
+                read(yaml);
+            }
         } catch (java.io.IOException e) {
             plugin.getLogger().warning("Could not read the bundled lang/en.yml: " + e);
         }
+        // the English file on disk follows the plugin: an outdated one is set aside, not mixed with new screens
+        File english = new File(plugin.getDataFolder(), "lang/en.yml");
+        if (english.exists()) {
+            int onDisk = YamlConfiguration.loadConfiguration(english).getInt("version", 1);
+            if (onDisk < bundled) {
+                File backup = new File(plugin.getDataFolder(), "lang/en.yml.old-" + onDisk);
+                if (english.renameTo(backup)) {
+                    plugin.getLogger().info("lang/en.yml was from an older version: kept as " + backup.getName() + ", new texts written");
+                }
+            }
+        }
+        if (!english.exists() && plugin.getResource("lang/en.yml") != null) plugin.saveResource("lang/en.yml", false);
         File file = new File(plugin.getDataFolder(), "lang/" + language + ".yml");
         if (file.exists()) read(YamlConfiguration.loadConfiguration(file));
         else plugin.getLogger().warning("lang/" + language + ".yml not found; using English");

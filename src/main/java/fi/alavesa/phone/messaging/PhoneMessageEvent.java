@@ -7,7 +7,7 @@ import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
 
 /**
- * Called on the main thread when a player sends a phone message, after the plugin's own checks (permission, mute,
+ * Called on the main thread when a player sends a phone message (or edits one: {@link #isEdit}), after the plugin's own checks (permission, mute,
  * rate limit, length) and before the message is stored or delivered. Cancel it to drop the message (the sender is
  * told it was not sent), change the text with {@link #setMessage}, or just log it.
  */
@@ -20,12 +20,23 @@ public final class PhoneMessageEvent extends Event implements Cancellable {
     private final String recipientName;
     private String message;
     private boolean cancelled;
+    private final boolean edit;
 
     public PhoneMessageEvent(Player sender, UUID recipientId, String recipientName, String message) {
+        this(sender, recipientId, recipientName, message, false);
+    }
+
+    public PhoneMessageEvent(Player sender, UUID recipientId, String recipientName, String message, boolean edit) {
+        this.edit = edit;
         this.sender = sender;
         this.recipientId = recipientId;
         this.recipientName = recipientName;
         this.message = message;
+    }
+
+    /** True when the sender is changing a message they sent earlier; {@link #getMessage} is the new text. */
+    public boolean isEdit() {
+        return edit;
     }
 
     public Player getSender() {

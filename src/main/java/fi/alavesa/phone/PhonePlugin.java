@@ -2,6 +2,7 @@ package fi.alavesa.phone;
 
 import fi.alavesa.phone.camera.CameraService;
 import fi.alavesa.phone.camera.PhotoStore;
+import fi.alavesa.phone.camera.SkinCache;
 import fi.alavesa.phone.config.Lang;
 import fi.alavesa.phone.config.PhoneConfig;
 import fi.alavesa.phone.messaging.MessageService;
@@ -10,6 +11,7 @@ import fi.alavesa.phone.phone.PhoneItems;
 import fi.alavesa.phone.phone.PhoneListener;
 import fi.alavesa.phone.resourcepack.PackService;
 import fi.alavesa.phone.storage.Database;
+import fi.alavesa.phone.storage.PlayerSettings;
 import fi.alavesa.phone.ui.FontWidths;
 import fi.alavesa.phone.ui.Glyphs;
 import fi.alavesa.phone.ui.UiController;
@@ -37,6 +39,7 @@ public final class PhonePlugin extends JavaPlugin {
     private Glyphs glyphs;
     private Database database;
     private PackService pack;
+    private PlayerSettings settings;
     private PostFx postFx;
     private PhoneItems items;
     private MessageService messages;
@@ -48,6 +51,7 @@ public final class PhonePlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        migrateConfig();
         FontWidths widths;
         try (InputStream g = getResource("font/glyphs.properties"); InputStream w = getResource("font/default_widths.tsv")) {
             glyphs = new Glyphs(g);
@@ -62,7 +66,7 @@ public final class PhonePlugin extends JavaPlugin {
 
         database = new Database(getLogger());
         Map<java.util.UUID, Long> mutes;
-        java.util.Set<Integer> photoIds;
+        Map<Integer, Integer> photoIds;
         try {
             database.open(new File(getDataFolder(), "phone.db"));
             mutes = database.loadMutes();
@@ -78,21 +82,23 @@ public final class PhonePlugin extends JavaPlugin {
             });
         }
 
-        pack = new PackService(this, cfg);
+        settings = new PlayerSettings(this, database);
+        pack = new PackService(this, settings, cfg, lang);
         pack.start();
         postFx = new PostFx();
         Sounds sounds = new Sounds(pack::hasPack);
         items = new PhoneItems(cfg, lang);
         messages = new MessageService(this, database, cfg, mutes);
         photos = new PhotoStore(this, database, items, cfg, lang, photoIds);
-        camera = new CameraService(this, database, items, pack, postFx, sounds, photos, cfg, lang);
-        ui = new UiController(this, database, messages, items, pack, postFx, sounds, camera, glyphs, widths, cfg, lang);
+        SkinCache skins = new SkinCache(this, cfg.playerSkins);
+        camera = new CameraService(this, settings, skins, items, pack, postFx, sounds, photos, cfg, lang);
+        ui = new UiController(this, database, messages, items, pack, settings, postFx, sounds, camera, glyphs, widths, cfg, lang);
         phoneListener = new PhoneListener(this, items, messages, ui, camera);
         messages.setNotifier(ui);
         camera.setResultScreen(ui);
         camera.setItemSync(phoneListener::sync);
 
-        for (var listener : List.of(pack, photos, camera, ui, phoneListener)) {
+        for (var listener : List.of(settings, pack, photos, skins, camera, ui, phoneListener)) {
             getServer().getPluginManager().registerEvents(listener, this);
         }
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event ->
@@ -119,13 +125,37 @@ public final class PhonePlugin extends JavaPlugin {
         cfg = new PhoneConfig(getConfig(), glyphs.zoomLevels, getLogger());
         lang = new Lang(this, cfg.language);
         ui.closeAll();
-        pack.reload(cfg);
+        pack.reload(cfg, lang);
         items.reload(cfg, lang);
         messages.reload(cfg);
         photos.reload(cfg, lang);
         camera.reload(cfg, lang);
         ui.reload(cfg, lang);
         registerRecipe();
+    }
+
+    /**
+     * A config.yml written by 1.0.0 says "mode: builtin" (its only self-hosting mode, on a port of its own that many
+     * hosts do not open). Such a file is moved to "auto" once and gets the options added since.
+     */
+    private void migrateConfig() {
+        // read the file itself: getConfig() also answers from the defaults in the jar
+        var onDisk = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(new File(getDataFolder(), "config.yml"));
+        if (onDisk.isSet("passcode.enabled")) return;       // already a 1.1 file
+        boolean wasBuiltin = "builtin".equalsIgnoreCase(getConfig().getString("resource-pack.mode"));
+        if (wasBuiltin) getConfig().set("resource-pack.mode", "auto");
+        getConfig().options().copyDefaults(true);
+        saveConfig();
+        getLogger().info("config.yml updated for 1.1: new options added"
+                + (wasBuiltin ? "; resource-pack.mode changed from builtin to auto (served on the Minecraft port)" : ""));
+    }
+
+    public PlayerSettings settings() {
+        return settings;
+    }
+
+    public PhotoStore photos() {
+        return photos;
     }
 
     private void registerRecipe() {

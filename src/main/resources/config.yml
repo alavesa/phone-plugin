@@ -10,6 +10,14 @@ item:
   # false: the phone looks like the base material and unread messages show as an enchantment glint.
   #        Use this if many of your players play without the pack.
   use-item-model: true
+  # Item model definitions (assets/<namespace>/items/<name>.json) for the three looks of the phone. The defaults
+  # are in this plugin's pack. To only swap the picture, drop a PNG into plugins/Phone/textures/ instead (see the
+  # README.txt there); change these when the model lives in another pack.
+  models:
+    normal: "phone:phone"
+    unread: "phone:phone_unread"
+    # shown while the camera viewfinder is open; the default is invisible in first person
+    camera: "phone:phone_camera"
   recipe:
     enabled: false
     # Three rows of three characters; a space is an empty slot.
@@ -22,6 +30,14 @@ item:
       G: GLASS_PANE
       R: REDSTONE
       C: COPPER_INGOT
+
+# Lock screen. With this on, a player sets a 4-digit passcode the first time they open a phone and must enter it
+# every time they open it again. The passcode belongs to the player, not to the item. Admins: /phone passcode reset <name>.
+passcode:
+  enabled: true
+  # Wrong codes in a row before the phone locks for lockout-seconds.
+  max-attempts: 5
+  lockout-seconds: 30
 
 ui:
   # Blue tint + vignette over the world while a phone screen is open (post effect phone:screen).
@@ -36,6 +52,10 @@ ui:
   messages-per-page: 6
   max-lines-per-page: 16
   contacts-per-page: 5
+  # Messages the Up / Down buttons of a conversation move by.
+  scroll-step: 3
+  # How many of your latest messages the Edit screen offers.
+  editable-messages: 5
 
 messaging:
   max-length: 160
@@ -50,6 +70,11 @@ messaging:
   # one refresh); false = the recipient only hears the sound and presses Refresh (that button keeps the typed text).
   auto-refresh: true
   refresh-delay-ticks: 20
+  # Senders may change or delete their own messages (deleting removes them for both sides).
+  allow-edit: true
+  allow-delete: true
+  # Only messages younger than this can be edited or deleted (0 = no limit).
+  edit-window-minutes: 0
   # People you have talked with stay in the contact list when they are offline.
   show-offline-contacts: true
   # Delete messages older than this many days at startup (0 = keep forever).
@@ -75,6 +100,19 @@ camera:
   max-chunks: 120
   entities: true
   dither: true
+  # Players are drawn as posed, skinned figures (walking, sneaking, swimming, gliding, sleeping, sitting).
+  # Skins are downloaded once per player from the skin server in the background; false = plain colours.
+  player-skins: true
+  # Video: swap-hands key (F) in the viewfinder starts and stops a recording. Frames are rendered like photos,
+  # with the blocks as they were when the recording started and players/mobs moving. A printed video plays on
+  # its map while someone holds it; its frames are only in memory during that time.
+  video:
+    enabled: true
+    # Frames per second (also the playback speed) and the longest recording.
+    fps: 4
+    max-seconds: 6
+    # View distance of video frames (shorter than photos: the camera may turn, so all chunks around are copied).
+    max-distance: 48
   # Printing
   require-photo-paper: false
   location-in-lore: true
@@ -84,18 +122,23 @@ camera:
 resource-pack:
   # Send the pack when a player joins.
   send-on-join: true
-  # builtin: the plugin serves plugins/Phone/phone-pack.zip itself over HTTP (see builtin below).
-  # url:     you host plugins/Phone/phone-pack.zip yourself and put its address in "url".
-  # none:    nothing is sent (for example when you merge the pack into your server pack).
-  mode: builtin
+  # auto:      same-port, or builtin if the Minecraft port cannot be used. Right for almost every server.
+  # same-port: the pack is downloaded through the Minecraft port itself: nothing else to open at your host.
+  #            Does not work behind a Velocity/Bungee proxy.
+  # builtin:   the plugin serves the pack over HTTP on builtin.port, which players must be able to reach.
+  # url:       you host plugins/Phone/phone-pack.zip yourself and put its address in "url".
+  # none:      nothing is sent (for example when you merge the pack into your server pack).
+  mode: auto
   url: ""
   required: false
   prompt: "<white>The phone needs this pack for its screen, camera and sounds."
   builtin:
     bind: 0.0.0.0
     port: 8765
-    # Address players reach this machine at. Empty = the address each player typed to join.
+    # Address players reach this machine at (same-port and builtin). Empty = the address each player typed to join.
     public-host: ""
+  # A player whose client did not report this pack as loaded gets the plain-text phone and no camera effects,
+  # and is told so in chat. Players can override with /phone ui fancy|plain|auto.
   # Treat every player as having the pack (set this to true with mode "none" when the phone pack is part of
   # another pack the players already have). Otherwise the fancy UI is only used after the client reports the
   # pack as loaded.

@@ -3,6 +3,10 @@
 # The strings under "ui:" (except ui.title and ui.button.*) are drawn inside the phone screen: plain text only,
 # no tags - the phone theme colours them, and the plugin measures them to align the screen.
 
+# Bumped when texts change. An older file on the server is kept as en.yml.old-<version> and replaced by this one,
+# so screens never mix old wording with new buttons. Copy your changes over from the backup.
+version: 2
+
 item:
   phone:
     name: "<white>Phone"
@@ -15,8 +19,19 @@ item:
     lore-by: "<gray>Photographer: <white><player>"
     lore-date: "<gray>Taken: <white><date>"
     lore-location: "<gray>Location: <white><world> <x>, <y>, <z>"
+  video:
+    name: "<white>Video by <player>"
+    lore-length: "<gray>Length: <white><seconds> s <gray>- hold to watch"
+
+pack:
+  failed: "<red>The phone resource pack could not be downloaded.</red> <gray>Your phone works in plain text, without the camera effects. Try <white>/phone pack</white>; if you installed the pack yourself, use <white>/phone ui fancy</white>."
+  declined: "<gray>You declined the phone resource pack: your phone works in plain text. <white>/phone pack</white> offers it again."
+
+passcode:
+  set: "<green>Passcode set. You need it every time you open your phone."
 
 error:
+  not-ready: "<gray>Your phone is starting up, try again in a moment."
   no-permission: "<red>You are not allowed to do that."
   no-phone: "<red>You need a phone for that."
   no-apps: "<red>Your phone has no apps you are allowed to use."
@@ -28,7 +43,14 @@ message:
 camera:
   not-allowed: "<red>You cannot use the camera."
   hold-phone: "<red>Hold the phone in your hand to use the camera."
-  actionbar: "<white>Zoom <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right-click: take photo <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  # <lens> is lens-rear or lens-front below
+  actionbar: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> F: video <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  actionbar-no-video: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  lens-rear: "Camera"
+  lens-front: "<aqua>Selfie</aqua>"
+  actionbar-preparing: "<yellow>Preparing the recording..."
+  actionbar-recording: "<red>REC</red> <white><seconds> s</white> <gray>/ <max> s <dark_gray>|</dark_gray> F: stop"
+  video-saved: "<green>Video saved. <gray>Hold it to watch."
   actionbar-capturing: "<yellow>Developing the photo..."
   cooldown: "<red>The camera is ready again in <seconds> s"
   failed: "<red>The photo could not be developed."
@@ -39,6 +61,9 @@ camera:
   printed-dropped: "<green>Photo printed. <gray>Your inventory is full, so it dropped at your feet."
 
 command:
+  ui: "<gray>Phone look: <white><mode></white> -> <white><result></white>. Resource pack: <white><pack></white>. <gray>Change with /phone ui auto|fancy|plain"
+  passcode-reset: "<green>The passcode of <player> was removed. They choose a new one the next time they open a phone."
+  status: "<gray>Pack delivery: <white><delivery></white>, SHA-1 <white><sha1></white>. Video frames in memory: <white><frames></white>"
   players-only: "<red>Only a player can do that."
   reloaded: "<green>Phone configuration reloaded."
   gave-phone: "<green>Gave a phone to <player>."
@@ -67,10 +92,42 @@ ui:
     refresh: "Refresh"
     block: "Block"
     unblock: "Unblock"
-    older: "Older"
-    newer: "Newer"
+    older: "Scroll up"
+    newer: "Scroll down"
     print: "Print"
+    save-video: "Save video"
     retake: "Retake"
+    settings: "Settings"
+    sign-in: "Sign in"
+    set-passcode: "Set passcode"
+    change-passcode: "Change passcode"
+    resend-pack: "Send resource pack again"
+    save: "Save"
+    delete: "Delete"
+    edit: "Edit"
+  lock:
+    enter: "Enter your passcode"
+    setup: "Choose a 4-digit passcode"
+    change: "Change your passcode"
+    field: "Passcode"
+    field-old: "Current passcode"
+    field-new: "New passcode (4 digits)"
+    field-again: "New passcode again"
+    wrong: "Wrong passcode (<left> tries left)"
+    wrong-old: "The current passcode is wrong"
+    locked-out: "Too many tries. Wait <seconds> s"
+    not-four-digits: "A passcode is exactly 4 digits"
+    mismatch: "The two passcodes differ"
+  settings:
+    title: "Settings"
+    pack-on: "Resource pack: loaded"
+    pack-off: "Resource pack: not loaded (plain text)"
+  edit:
+    title: "Your messages"
+    to: "To <player>"
+    pick: "Pick a message to change or delete"
+    none: "Nothing here can be changed"
+    hint: "Change the text and save, or delete"
   home:
     title: "Home"
     greeting: "Hello, <player>"
@@ -86,8 +143,9 @@ ui:
     unknown: "Unknown"
   conversation:
     empty: "No messages yet. Say hi!"
-    older-above: "Older messages: press Older"
-    newer-below: "Newer messages: press Newer"
+    older-above: "Earlier messages: Scroll up"
+    newer-below: "Later messages: Scroll down"
+    edited: "edited"
     blocked: "You blocked this player"
     input-label: "Message"
     you: "You"
@@ -105,7 +163,11 @@ ui:
     cancelled: "The message was not sent"
     no-permission: "You may not send messages"
     error: "Could not send - try again"
+    not-yours: "That message is not yours or is gone"
+    too-old: "Only messages from the last <minutes> min can be changed"
+    disabled: "That is switched off on this server"
   camera:
     title: "Camera"
     captured: "Photo taken"
+    recorded: "Video recorded (<seconds> s)"
     zoom: "Zoom <zoom>x"

@@ -74,8 +74,16 @@ public final class PhoneListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onInteract(PlayerInteractEvent e) {
-        if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         if (!items.isPhone(e.getItem())) return;
+        if (e.getAction() == Action.LEFT_CLICK_AIR || e.getAction() == Action.LEFT_CLICK_BLOCK) {
+            // left-click in the viewfinder flips between the rear and the front camera
+            if (camera.isActive(e.getPlayer())) {
+                e.setCancelled(true);
+                camera.toggleSelfie(e.getPlayer());
+            }
+            return;
+        }
+        if (e.getAction() != Action.RIGHT_CLICK_AIR && e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         // the phone never does what its base item would do, and never uses the block behind it
         e.setUseItemInHand(Event.Result.DENY);
         e.setUseInteractedBlock(Event.Result.DENY);
