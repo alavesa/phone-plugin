@@ -103,6 +103,15 @@ camera:
   # Players are drawn as posed, skinned figures (walking, sneaking, swimming, gliding, sleeping, sitting).
   # Skins are downloaded once per player from the skin server in the background; false = plain colours.
   player-skins: true
+  # Photos with real block textures and models. The server has none of the client's assets, so the vanilla ones
+  # come from the client jar of this Minecraft version, downloaded once from Mojang into plugins/Phone/cache/
+  # (about 40 MB; it is only read, never sent to anyone). Without it photos use block colours.
+  textures:
+    enabled: true
+    download: true
+    # Resource packs (zip files or folders, paths from the server folder) searched first: custom item models of
+    # item displays, ragdolls and RP Engine models, or retextured blocks. Example: ["plugins/RPEngine/pack.zip"]
+    extra-packs: []
   # Video: swap-hands key (F) in the viewfinder starts and stops a recording. Frames are rendered like photos,
   # with the blocks as they were when the recording started and players/mobs moving. A printed video plays on
   # its map while someone holds it; its frames are only in memory during that time.
@@ -118,6 +127,29 @@ camera:
   location-in-lore: true
   # Full inventory when printing: true drops the photo at the player's feet, false refuses to print.
   drop-when-full: true
+
+# The Photos app keeps every photo and video a player takes (and the ones sent to them) until they delete it.
+# Files: plugins/Phone/gallery/. Printing makes a map from a picture in Photos; the picture stays.
+photos:
+  # A full library refuses new pictures until the player deletes some.
+  max-per-player: 100
+  # Frames per second when a video plays inside the phone screen (each frame re-sends the screen).
+  playback-fps: 4
+
+# Minestagram: post photos and videos from Photos, like, comment, repost. Permission phone.gram (everyone),
+# phone.gram.moderate (operators) deletes any post or comment; /phone gram delete <post id> does the same.
+minestagram:
+  enabled: true
+  caption-length: 150
+  comment-length: 120
+  bio-length: 60
+  comments-per-minute: 6
+  # Seconds between two posts of one player (moderators are exempt).
+  post-cooldown-seconds: 30
+  # A video post plays once when it comes up in the feed.
+  autoplay-videos: true
+  # Tell an online author (action bar + sound) when someone likes, comments on or reposts their post.
+  notify: true
 
 resource-pack:
   # Send the pack when a player joins.

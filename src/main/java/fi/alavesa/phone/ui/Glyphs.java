@@ -19,6 +19,7 @@ public final class Glyphs {
 
     public static final Key FONT = Key.key("phone", "ui");
     public static final Key DEFAULT_FONT = Key.key("minecraft", "default");
+    public static final Key PHOTO_FONT = Key.key("phone", "photo");
 
     private record Glyph(String ch, int advance) {}
 
@@ -26,12 +27,16 @@ public final class Glyphs {
     public final int contentWidth;
     public final int panelWidth;
     public final int panelMargin;
+    /** Width of the dialog text element the screens are laid out for. */
+    public final int bodyWidth;
     public final int panelTop;
     public final int capWidth;
     public final int tailWidth;
-    /** Width of an app button on the home screen and how far its icon reaches above the button. */
-    public final int appButtonWidth;
-    public final int appIconRows;
+    /** Columns of a button grid -> width of each button (the grid is always {@link #contentWidth} wide). */
+    public final Map<Integer, Integer> buttonColumns = new java.util.TreeMap<>();
+    /** Photos in a dialog: edge length in pixels, and the first character of the phone:photo font (one per row). */
+    public final int photoSize;
+    public final int photoBase;
     public final int[] panelHeights;
     /** Bubble tile widths, widest first. */
     public final int[] tileWidths;
@@ -49,12 +54,17 @@ public final class Glyphs {
         contentWidth = num(p, "layout.content_width");
         panelWidth = num(p, "layout.panel_width");
         panelMargin = num(p, "layout.panel_margin");
+        bodyWidth = num(p, "layout.body_width");
         panelTop = num(p, "layout.panel_top");
         capWidth = num(p, "layout.cap_width");
         tailWidth = num(p, "layout.tail_width");
         spacePowers = num(p, "layout.space_powers");
-        appButtonWidth = num(p, "layout.app_button_width");
-        appIconRows = num(p, "layout.app_icon_rows");
+        for (String pair : p.getProperty("layout.button_columns").split(",")) {
+            String[] nw = pair.trim().split(":");
+            buttonColumns.put(Integer.parseInt(nw[0]), Integer.parseInt(nw[1]));
+        }
+        photoSize = num(p, "photo.size");
+        photoBase = Integer.parseInt(p.getProperty("photo.base").trim(), 16);
         panelHeights = ints(p, "layout.panel_heights");
         int[] tiles = ints(p, "layout.tile_widths");
         tileWidths = new int[tiles.length];
@@ -106,6 +116,17 @@ public final class Glyphs {
             if ((left & bit) != 0) sb.append(ch(sign + bit));
         }
         return sb.toString();
+    }
+
+    public boolean has(String name) {
+        return glyphs.containsKey(name);
+    }
+
+    /** Width of each button in a grid of {@code columns} columns that spans the screen. */
+    public int buttonWidth(int columns) {
+        Integer w = buttonColumns.get(columns);
+        if (w == null) throw new IllegalArgumentException("no " + columns + "-column button grid");
+        return w;
     }
 
     /** The smallest panel that is at least {@code needed} px tall (the tallest one if none is). */

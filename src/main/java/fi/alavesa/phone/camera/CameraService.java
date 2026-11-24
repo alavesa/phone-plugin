@@ -1,12 +1,18 @@
 package fi.alavesa.phone.camera;
 
+import fi.alavesa.phone.camera.assets.AssetSource;
+import fi.alavesa.phone.camera.assets.Models;
+import fi.alavesa.phone.camera.assets.Tints;
 import fi.alavesa.phone.config.Lang;
 import fi.alavesa.phone.config.PhoneConfig;
+import fi.alavesa.phone.media.Gallery;
+import fi.alavesa.phone.media.MediaStore;
 import fi.alavesa.phone.phone.PhoneItems;
 import fi.alavesa.phone.resourcepack.PackService;
 import fi.alavesa.phone.storage.PlayerSettings;
 import fi.alavesa.phone.util.PostFx;
 import fi.alavesa.phone.util.Sounds;
+import fi.alavesa.phone.util.Tasks;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,12 +34,7 @@ import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.WaterMob;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -47,7 +48,6 @@ import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 
 /**
@@ -72,10 +72,9 @@ import org.bukkit.util.Vector;
  */
 public final class CameraService implements Listener {
 
-    /** Shows the "photo taken" screen; implemented by the UI. */
+    /** Shows a picture that was just taken (it is already in Photos); implemented by the UI. */
     public interface ResultScreen {
-        /** @param videoSeconds 0 for a photo, else the length of the recording */
-        void show(Player player, int zoom, String location, double videoSeconds);
+        void developed(Player player, long galleryId);
     }
 
     private static final NamespacedKey FOV_MODIFIER = new NamespacedKey("phone", "camera_zoom");
@@ -114,6 +113,12 @@ public final class CameraService implements Listener {
     private final PostFx postFx;
     private final Sounds sounds;
     private final PhotoStore photos;
+    private final Gallery gallery;
+    private final SceneCapture capture;
+    private final AssetSource assets;
+    /** Set once the client assets are loaded (photos are then textured); read by the render thread. */
+    private volatile Models models;
+    private volatile Tints tints;
     private PhoneConfig cfg;
     private Lang lang;
     private ResultScreen resultScreen;
@@ -128,7 +133,7 @@ public final class CameraService implements Listener {
     });
 
     public CameraService(Plugin plugin, PlayerSettings settings, SkinCache skins, PhoneItems items, PackService pack, PostFx postFx,
-                         Sounds sounds, PhotoStore photos, PhoneConfig cfg, Lang lang) {
+                         Sounds sounds, PhotoStore photos, Gallery gallery, PhoneConfig cfg, Lang lang) {
         this.plugin = plugin;
         this.settings = settings;
         this.skins = skins;
@@ -137,6 +142,9 @@ public final class CameraService implements Listener {
         this.postFx = postFx;
         this.sounds = sounds;
         this.photos = photos;
+        this.gallery = gallery;
+        this.capture = new SceneCapture(skins);
+        this.assets = new AssetSource(plugin.getLogger());
         this.cfg = cfg;
         this.lang = lang;
         // keeps the hint on screen and notices a phone that left the hands
@@ -150,6 +158,38 @@ public final class CameraService implements Listener {
         }
         this.cfg = cfg;
         this.lang = lang;
+    }
+
+    /** Listener for arm swings (drawn in photos). */
+    public Listener captureListener() {
+        return capture;
+    }
+
+    /**
+     * Loads the block textures and models for photos in the background: the client jar of this Minecraft version
+     * (downloaded once into plugins/Phone/cache) and the extra packs from the config.
+     */
+    public void loadAssets() {
+        if (!cfg.texturesEnabled) return;
+        java.io.File cache = new java.io.File(plugin.getDataFolder(), "cache");
+        List<java.io.File> extra = new ArrayList<>();
+        for (String path : cfg.texturesExtraPacks) extra.add(new java.io.File(path));
+        String version = Bukkit.getMinecraftVersion();
+        boolean download = cfg.texturesDownload;
+        Thread t = new Thread(() -> {
+            assets.open(cache, version, download, extra);
+            if (!assets.ready()) return;
+            Models m = new Models(assets);
+            tints = new Tints(m);
+            models = m;
+        }, "phone-assets");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** "textured" when photos have block textures, else why not. */
+    public String textureState() {
+        return models != null ? "textured" : !cfg.texturesEnabled ? "off" : "block colours";
     }
 
     public void setResultScreen(ResultScreen screen) {
@@ -166,6 +206,7 @@ public final class CameraService implements Listener {
             if (p != null) exit(p);
         }
         renderer.shutdownNow();
+        assets.close();
     }
 
     public boolean isActive(Player player) {
@@ -388,7 +429,7 @@ public final class CameraService implements Listener {
         for (int i = 0; i < cfg.chunksPerTick && !wanted.isEmpty(); i++) {
             int[] c = wanted.poll();
             if (world.isChunkLoaded(c[0], c[1])) {
-                into.put(Scene.chunkKey(c[0], c[1]), world.getChunkAt(c[0], c[1]).getChunkSnapshot(false, false, false));
+                into.put(Scene.chunkKey(c[0], c[1]), world.getChunkAt(c[0], c[1]).getChunkSnapshot(false, models != null, false));
             }
         }
     }
@@ -445,7 +486,9 @@ public final class CameraService implements Listener {
         scene.environment = world.getEnvironment();
         scene.time = world.getTime();
         scene.storm = world.hasStorm();
-        if (cfg.renderEntities) captureEntities(player, eye, scene, s.selfie);
+        scene.models = models;
+        scene.tints = scene.models == null ? null : tints;
+        if (cfg.renderEntities) capture.capture(player, eye, scene, s.selfie, maxDistance);
         return scene;
     }
 
@@ -558,9 +601,16 @@ public final class CameraService implements Listener {
             print(player);
             return;
         }
-        String location = cfg.locationInLore
-                ? eye.getWorld().getName() + "  " + eye.getBlockX() + ", " + eye.getBlockY() + ", " + eye.getBlockZ() : "";
-        resultScreen.show(player, cfg.zoomLevels.get(s.zoomIndex), location, frames.size() > 1 ? frames.size() / (double) cfg.videoFps : 0);
+        // every picture goes into Photos; the result screen is the Photos app on it
+        MediaStore.Media media = new MediaStore.Media(List.copyOf(frames), frames.size() > 1 ? cfg.videoFps : 1);
+        Tasks.onMain(plugin, gallery.add(player.getUniqueId(), media, takenAt, eye, null), id -> {
+            if (!player.isOnline()) return;
+            if (id < 0) {
+                player.sendMessage(lang.get("camera.photos-full", Lang.ph("max", gallery.limit())));
+                return;
+            }
+            resultScreen.developed(player, id);
+        });
     }
 
     /**
@@ -639,46 +689,6 @@ public final class CameraService implements Listener {
         return inside ? 0 : best;
     }
 
-    private void captureEntities(Player photographer, Location eye, Scene scene, boolean includeSelf) {
-        List<Entity> near = new ArrayList<>(eye.getWorld().getNearbyEntities(eye, cfg.maxDistance, cfg.maxDistance, cfg.maxDistance,
-                e -> e instanceof LivingEntity living && (includeSelf || e != photographer) && !living.isInvisible()
-                        && e.getType() != EntityType.ARMOR_STAND
-                        && !(e instanceof Player p && p != photographer && (p.getGameMode() == GameMode.SPECTATOR || !photographer.canSee(p)))));
-        near.sort(Comparator.comparingDouble(e -> e.getLocation().distanceSquared(eye)));
-        for (int i = 0; i < near.size() && i < 64; i++) {
-            Entity e = near.get(i);
-            if (e instanceof Player p) {
-                // players get the real model: skin, pose and limb swing
-                scene.figures.add(Figure.of(p, skins.pixels(p), skins.slim(p)));
-                continue;
-            }
-            BoundingBox b = e.getBoundingBox();
-            int[] c = colours(e);
-            scene.entities.add(new Scene.Box(b.getMinX(), b.getMinY(), b.getMinZ(), b.getMaxX(), b.getMaxY(), b.getMaxZ(),
-                    c[0], c[1], b.getMinY() + b.getHeight() * 0.75));
-        }
-    }
-
-    /** Body and head colour of an entity in a photo: a handful of recognisable mobs, sensible defaults for the rest. */
-    private static int[] colours(Entity e) {
-        return switch (e.getType()) {
-            case PLAYER -> new int[] {0x3A7BD5, 0xD8A27A};
-            case VILLAGER, WANDERING_TRADER -> new int[] {0x7A4F35, 0xC68E6E};
-            case ZOMBIE, ZOMBIE_VILLAGER, HUSK, DROWNED -> new int[] {0x3C6E8F, 0x4F7F3A};
-            case SKELETON, STRAY, BOGGED -> new int[] {0xBDBDBD, 0xD6D6D6};
-            case CREEPER -> new int[] {0x4CAF50, 0x4CAF50};
-            case ENDERMAN -> new int[] {0x161616, 0x161616};
-            case SPIDER, CAVE_SPIDER -> new int[] {0x34302B, 0x34302B};
-            case COW -> new int[] {0x4A3A2A, 0x4A3A2A};
-            case PIG -> new int[] {0xF0A5A2, 0xF0A5A2};
-            case SHEEP -> new int[] {0xEDEDED, 0xC9B8A4};
-            case CHICKEN -> new int[] {0xF5F5F5, 0xF5F5F5};
-            case IRON_GOLEM -> new int[] {0xD9D2C5, 0xD9D2C5};
-            default -> e instanceof Monster ? new int[] {0x5A6B4A, 0x5A6B4A}
-                    : e instanceof WaterMob ? new int[] {0x6FA8C8, 0x6FA8C8} : new int[] {0x9A7B5A, 0x9A7B5A};
-        };
-    }
-
     // ---- printing ---------------------------------------------------------------------------------------------------
 
     public boolean hasPending(Player player) {
@@ -691,13 +701,24 @@ public final class CameraService implements Listener {
         if (s != null) s.pending = null;
     }
 
-    /** Turns the last picture into a photo item. Returns false (after telling the player why) when it cannot. */
+    /** Prints the last picture (/phone shutter save). Returns false (after telling the player why) when it cannot. */
     public boolean print(Player player) {
         Session s = sessions.get(player.getUniqueId());
         if (s == null || s.pending == null) {
             player.sendMessage(lang.get("camera.nothing-to-print"));
             return false;
         }
+        Pending p = s.pending;
+        if (!printMedia(player, p.frames(), cfg.videoFps, p.takenAt(), p.where())) return false;
+        s.pending = null;
+        return true;
+    }
+
+    /**
+     * Turns a picture into a photo item (a video into a video map) and gives it to the player. Returns false (after
+     * telling the player why) when it cannot: no photo paper, full inventory.
+     */
+    public boolean printMedia(Player player, List<int[]> frames, int fps, long takenAt, Location where) {
         boolean needsPaper = cfg.requirePhotoPaper && player.getGameMode() != GameMode.CREATIVE;
         if (needsPaper && !items.hasPhotoPaper(player)) {
             player.sendMessage(lang.get("camera.no-paper"));
@@ -709,16 +730,14 @@ public final class CameraService implements Listener {
             return false;
         }
         if (needsPaper) items.takePhotoPaper(player);
-        Pending p = s.pending;
-        s.pending = null;
-        ItemStack photo = p.frames().size() > 1 ? photos.createVideo(player, p.frames(), cfg.videoFps, p.takenAt(), p.where())
-                : photos.create(player, p.frames().getFirst(), p.takenAt(), p.where());
+        ItemStack photo = frames.size() > 1 ? photos.createVideo(player, frames, fps, takenAt, where)
+                : photos.create(player, frames.getFirst(), takenAt, where);
         Map<Integer, ItemStack> left = player.getInventory().addItem(photo);
         if (!left.isEmpty()) {
             for (ItemStack item : left.values()) player.getWorld().dropItemNaturally(player.getLocation(), item);
             player.sendMessage(lang.get("camera.printed-dropped"));
         } else {
-            player.sendMessage(lang.get(p.frames().size() > 1 ? "camera.video-saved" : "camera.printed"));
+            player.sendMessage(lang.get(frames.size() > 1 ? "camera.video-saved" : "camera.printed"));
         }
         return true;
     }

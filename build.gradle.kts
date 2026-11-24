@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "fi.alavesa"
-version = "1.1.0"
+version = "1.2.0"
 
 repositories {
     mavenCentral()
@@ -19,6 +19,15 @@ dependencies {
     // The server's own netty, compile-only: same-port pack delivery (resourcepack/SamePortHttp) hooks the
     // Minecraft listening channel. Nothing is shaded.
     compileOnly(fileTree("libs") { include("netty-*.jar") })
+
+    testImplementation("io.papermc.paper:paper-api:26.3.build.253-stable")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.withType<JavaCompile>().configureEach {

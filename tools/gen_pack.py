@@ -35,21 +35,32 @@ TEX_ITEM = os.path.join(ASSETS, "textures", "item")
 # ---------------------------------------------------------------------------------------------------------------------
 # UI geometry (GUI pixels). Java reads these through glyphs.properties ("layout.*" keys).
 # ---------------------------------------------------------------------------------------------------------------------
-CONTENT_W = 216          # every line of a phone screen is padded to exactly this advance
-PANEL_W = 232            # the screen panel behind the text; sticks out PANEL_MARGIN px on both sides
-PANEL_MARGIN = (PANEL_W - CONTENT_W) // 2
+# The phone is portrait: a black screen in a rounded bezel, as wide as one 148 px row of dialog buttons.
+#
+# Horizontal alignment with the vanilla dialog (26.3 client): the body text widget is BODY_W wide (even), its lines
+# are centred inside BODY_W - 8, and the button grid (CONTENT_W wide) is centred in the same column. With a line
+# advance of PANEL_W + 1 = 166 the grid then starts exactly PANEL_MARGIN = 9 px right of the line start. The panel
+# art leaves its column 0 transparent, so the bezel looks the same on both sides (8 px around the content).
+CONTENT_W = 148          # = 1x148 = 2x73+2 = 3x48+4 = 5x28+8: every button grid fills the screen exactly
+PANEL_W = 165            # the phone behind the text (column 0 transparent)
+PANEL_MARGIN = 9         # content x 0 = panel x 9
+BODY_W = 174             # width of the dialog text element (Java: ScreenRenderer.bodyWidth)
 PANEL_TOP = 4            # px the panel starts above the top of the first text line (= the dialog text padding)
 PANEL_HEIGHTS = list(range(48, 241, 16)) + [255]   # one glyph per height; a glyph must fit the 256 px font atlas
-HEADER_H = 13            # header bar behind the second line (contact name / screen title)
+BUTTON_COLUMNS = {1: 148, 2: 73, 3: 48, 5: 28}     # columns -> button width of a grid that is CONTENT_W wide
 CAP_W = 3                # rounded end of a bubble
 TAIL_W = 2               # the little tail on the last row of a bubble
 TILE_WIDTHS = [1, 2, 4, 8, 16, 32, 64, 128]
 SPACE_POWERS = 10        # spaces of +-1, 2, 4 ... 512 px
 ZOOM_LEVELS = [1, 2, 3, 4, 6, 8, 12, 16]   # camera_<zoom>.json post effects that exist in the pack
-APP_BUTTON_W = 56        # width of an app button on the home screen (the vanilla button under the app tile)
-APP_ICON = 32            # app icon, drawn above its button
-APP_ICON_GAP = 2         # px between the icon and the button
 BIG_SCALE = 3            # lock-screen clock: the vanilla digits drawn this many times larger
+PHOTO_SIZE = 128         # a photo in a dialog: one glyph per pixel, see photo_font()
+
+# colours of the phone
+BEZEL_EDGE = (74, 76, 86, 255)
+BEZEL = (17, 17, 21, 255)
+SCREEN = (4, 4, 6, 252)
+ISLAND = (22, 22, 26, 255)
 
 T = (0, 0, 0, 0)
 WHITE = (255, 255, 255, 255)
@@ -197,22 +208,31 @@ class FontBuilder:
                                "ascent": ascent, "chars": [chars]})
 
     def big_digits(self):
-        """The lock-screen clock: the vanilla digit glyphs, scaled by the provider's height (no texture of our own).
+        """The lock-screen clock: 5x7 pixel digits of our own, drawn three times larger by the provider's height.
 
-        ascii.png is a 16x16 grid of 8 px cells; row 3 holds 0-9 and the colon. Every other cell is skipped."""
-        rows = []
-        for r in range(16):
-            row = ""
-            for c in range(16):
-                if r == 3 and c <= 10:
-                    name = "big." + ("colon" if c == 10 else str(c))
-                    width = 1 if c == 10 else 5         # pixel widths of the vanilla glyphs
-                    row += self.alloc(name, int(0.5 + width * BIG_SCALE) + 1)
-                else:
-                    row += "\u0000"
-            rows.append(row)
-        self.providers.append({"type": "bitmap", "file": "minecraft:font/ascii.png", "height": 8 * BIG_SCALE,
-                               "ascent": 7 * BIG_SCALE, "chars": rows})
+        (An earlier version pointed a provider at the vanilla ascii.png; the 26.3 client drew its "2" blank.)"""
+        font = {
+            "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+            "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", "#####"],
+            "2": [".###.", "#...#", "....#", "..##.", ".#...", "#....", "#####"],
+            "3": [".###.", "#...#", "....#", "..##.", "....#", "#...#", ".###."],
+            "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+            "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+            "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+            "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+            "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+            "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
+            "colon": [".", "#", ".", ".", ".", "#", "."],
+        }
+        cells = []
+        for name, rows in font.items():
+            img = blank(8, 8)
+            for y, row in enumerate(rows):
+                for x, c in enumerate(row):
+                    if c == "#":
+                        img[y][x] = WHITE
+            cells.append(("big." + name, img))
+        self.sheet("big_digits.png", cells, 8, 8, 8 * BIG_SCALE, 7 * BIG_SCALE)
 
     def spaces(self):
         advances = {}
@@ -286,144 +306,153 @@ def bubble_row(kind):
     return cells, h, ascent
 
 
-def panel(height):
-    """The phone screen: dark rounded panel with a status bar (signal, battery) and a home indicator."""
+SCREEN_X0, SCREEN_X1 = 5, PANEL_W - 5      # the black screen inside the bezel (inclusive)
+
+
+def sides(img, y0, y1):
+    """Bezel on both sides and black screen between them, rows y0..y1 (inclusive)."""
+    for y in range(y0, y1 + 1):
+        img[y][1] = BEZEL_EDGE
+        img[y][PANEL_W - 1] = BEZEL_EDGE
+        for x in range(2, SCREEN_X0):
+            img[y][x] = BEZEL
+        for x in range(SCREEN_X1 + 1, PANEL_W - 1):
+            img[y][x] = BEZEL
+        for x in range(SCREEN_X0, SCREEN_X1 + 1):
+            img[y][x] = SCREEN
+
+
+def panel(height, top):
+    """The phone from its top edge down: rounded bezel with the dynamic island, signal and battery, black screen.
+
+    top=False: a continuation piece (sides and screen only) for a second panel further down a long screen.
+    The bottom of the phone is not part of it: the home-indicator button row draws that (band_home)."""
     img = blank(PANEL_W, height)
-    border, bg, bar = (58, 64, 80, 255), (18, 21, 28, 244), (26, 30, 40, 250)
-    rounded(img, 0, 0, PANEL_W - 1, height - 1, 6, border)
-    rounded(img, 1, 1, PANEL_W - 2, height - 2, 5, bg)
-    # status bar strip
-    for y in range(2, 14):
-        for x in range(2, PANEL_W - 2):
-            if img[y][x] == bg:
-                img[y][x] = bar
-    # signal bars, left
+    sides(img, 0, height - 1)
+    if not top:
+        return img
+    # rounded top: clear the corners, then outline
+    for y in range(0, 16):
+        for x in range(0, PANEL_W):
+            img[y][x] = T
+    big = blank(PANEL_W, 40)
+    rounded(big, 1, 0, PANEL_W - 1, 39, 13, BEZEL_EDGE)
+    rounded(big, 2, 1, PANEL_W - 2, 39, 12, BEZEL)
+    rounded(big, SCREEN_X0, 4, SCREEN_X1, 39, 9, SCREEN)
+    for y in range(0, min(16, height)):
+        img[y] = big[y][:]
+    cx = (1 + PANEL_W - 1) // 2
+    # dynamic island with a camera dot
+    rounded(img, cx - 19, 6, cx + 19, 12, 3, ISLAND)
+    disc(img, cx + 12, 9, 1.6, (40, 44, 70, 255))
+    img[8][cx + 12] = (90, 100, 150, 255)
+    # signal bars and battery on the right of the island
+    white = (240, 240, 244, 255)
+    sx = SCREEN_X1 - 30
     for i in range(4):
-        rect(img, 8 + i * 3, 10 - i * 2, 9 + i * 3, 10, (210, 216, 228, 255) if i < 3 else (96, 102, 118, 255))
-    # battery, right
-    bx = PANEL_W - 24
-    rect(img, bx, 5, bx + 13, 10, (210, 216, 228, 255))
-    rect(img, bx + 1, 6, bx + 12, 9, bar)
-    rect(img, bx + 2, 7, bx + 9, 8, (120, 220, 120, 255))
-    rect(img, bx + 14, 7, bx + 14, 8, (210, 216, 228, 255))
-    # home indicator
-    if height >= 40:
-        rect(img, PANEL_W // 2 - 24, height - 6, PANEL_W // 2 + 24, height - 5, (96, 102, 118, 255))
+        rect(img, sx + i * 3, 11 - i * 2 - 1, sx + i * 3 + 1, 11, white)
+    bx = SCREEN_X1 - 15
+    rect(img, bx, 6, bx + 10, 11, white)
+    rect(img, bx + 1, 7, bx + 9, 10, SCREEN)
+    rect(img, bx + 2, 8, bx + 8, 9, white)
+    rect(img, bx + 11, 8, bx + 11, 9, white)
     return img
 
 
-def header_bar():
-    img = blank(PANEL_W, HEADER_H)
-    rect(img, 1, 0, PANEL_W - 2, HEADER_H - 2, (34, 39, 52, 250))
-    rect(img, 1, HEADER_H - 1, PANEL_W - 2, HEADER_H - 1, (58, 64, 80, 255))
+def band(columns):
+    """The background of one row of buttons (row + the 2 px gap under it), drawn by the label of the row's first
+    button. It covers everything under the row with the black screen, except a 1 px ring where the first button's
+    own border is, so that border still lights up on hover. Later buttons of the row are drawn over it."""
+    img = blank(PANEL_W, 22)
+    sides(img, 0, 21)
+    w = BUTTON_COLUMNS[columns]
+    x0, x1 = PANEL_MARGIN, PANEL_MARGIN + w - 1
+    for y in range(0, 20):
+        for x in range(x0, x1 + 1):
+            if y in (0, 19) or x in (x0, x1):
+                img[y][x] = T
     return img
 
 
-def icon_messages():
+def band_home():
+    """The last button row: the bottom of the phone with the home indicator. The client cuts everything off at the
+    bottom of the last button row, so the phone's rounded bottom has to fit inside these 20 px."""
+    img = blank(PANEL_W, 20)
+    big = blank(PANEL_W, 60)
+    rounded(big, 1, 0, PANEL_W - 1, 59, 13, BEZEL_EDGE)
+    rounded(big, 2, 0, PANEL_W - 2, 58, 12, BEZEL)
+    rounded(big, SCREEN_X0, 0, SCREEN_X1, 54, 9, SCREEN)
+    for y in range(20):
+        img[y] = big[40 + y][:]
+    cx = (1 + PANEL_W - 1) // 2
+    rounded(img, cx - 24, 8, cx + 24, 9, 1, (236, 236, 240, 255))
+    return img
+
+
+def cover(w):
+    """Paints over the face of a w px button (1 px inside its border) with the screen colour."""
+    img = blank(w - 2, 18)
+    rect(img, 0, 0, w - 3, 17, SCREEN[:3] + (255,))
+    return img
+
+
+def app_icon(colour, logo):
+    """16x16 app icon for the app list on the home screen: a rounded square with a white logo."""
     img = blank(16, 16)
-    rounded(img, 0, 0, 15, 15, 3, (52, 199, 89, 255))
-    rounded(img, 3, 3, 12, 10, 2, WHITE)
-    for (x, y) in ((4, 11), (5, 11), (4, 12)):
-        img[y][x] = WHITE
-    for x in (5, 8, 11):
-        img[7][x - 1] = (52, 199, 89, 255)
+    rounded(img, 0, 0, 15, 15, 4, colour + (255,))
+    for y, row in enumerate(logo):
+        for x, c in enumerate(row):
+            if c == "#":
+                img[2 + y][2 + x] = WHITE
     return img
 
 
-def icon_camera():
+APP_LOGOS = {
+    "messages": ((52, 199, 89), ["............", "..########..", ".##########.", ".##########.",
+                                 ".##########.", ".##########.", "..########..", "..##........", ".##.........",
+                                 "............", "............", "............"]),
+    "camera": ((90, 96, 112), ["............", "....####....", ".##########.", ".###....###.",
+                               ".##......##.", ".##......##.", ".###....###.", ".##########.", "............",
+                               "............", "............", "............"]),
+    "photos": ((250, 250, 252), None),
+    "gram": ((214, 41, 118), ["............", ".##########.", ".#........#.", ".#...##.#.#.",
+                              ".#..#..#..#.", ".#..#..#..#.", ".#...##...#.", ".#........#.", ".##########.",
+                              "............", "............", "............"]),
+    "settings": ((142, 142, 147), ["............", ".....##.....", "..#.####.#..", "...######...",
+                                   ".####..####.", ".####..####.", "...######...", "..#.####.#..", ".....##.....",
+                                   "............", "............", "............"]),
+}
+
+
+def photos_icon():
+    """The Photos app: a white tile with a colourful flower, like the real one."""
     img = blank(16, 16)
-    rounded(img, 0, 0, 15, 15, 3, (88, 96, 116, 255))
-    rect(img, 2, 5, 13, 12, (236, 240, 246, 255))
-    rect(img, 5, 3, 9, 4, (236, 240, 246, 255))
-    disc(img, 7.5, 8.5, 2.6, (40, 46, 60, 255))
-    disc(img, 7.5, 8.5, 1.2, (110, 190, 255, 255))
-    img[6][12] = (255, 190, 70, 255)
+    rounded(img, 0, 0, 15, 15, 4, (250, 250, 252, 255))
+    petals = [(255, 59, 48), (255, 149, 0), (255, 204, 0), (52, 199, 89), (0, 199, 190), (0, 122, 255),
+              (175, 82, 222), (255, 45, 85)]
+    for i, col in enumerate(petals):
+        a = i * math.pi / 4
+        disc(img, 7.5 + math.cos(a) * 3.6, 7.5 + math.sin(a) * 3.6, 1.9, col + (255,))
     return img
 
 
-def icon_contacts():
-    img = blank(16, 16)
-    rounded(img, 0, 0, 15, 15, 3, (72, 132, 240, 255))
-    disc(img, 7.5, 5.5, 2.3, WHITE)
-    rounded(img, 3, 9, 12, 13, 2, WHITE)
+def ring():
+    """Pink ring around an 8x8 player face (the avatar of a Minestagram account)."""
+    img = blank(12, 12)
+    for y in range(12):
+        for x in range(12):
+            d = math.hypot(x - 5.5, y - 5.5)
+            if 4.9 <= d <= 6.0:
+                img[y][x] = WHITE
     return img
 
 
-def app_tile(draw_logo, colour):
-    """An app on the home screen: a round icon with the label area of the button underneath.
-
-    The glyph is drawn as part of the button's label, 1 px inside the vanilla button: the lower 18 rows cover the
-    grey button face with a dark pill for the label (the button's 1 px border stays visible and still lights up on
-    hover), the icon sits above the button, over the bottom of the screen text.
-    """
-    w, icon_rows = APP_BUTTON_W - 2, APP_ICON + APP_ICON_GAP
-    img = blank(w, icon_rows + 19)
-    x0 = (w - APP_ICON) // 2
-    dark = tuple(int(c * 0.72) for c in colour) + (255,)
-    disc(img, x0 + 15.5, 15.5, 15.6, dark)
-    disc(img, x0 + 15.5, 15.5, 14.6, colour + (255,))
-    # soft highlight on the upper left of the disc
-    light = tuple(min(255, int(c * 1.18 + 14)) for c in colour) + (255,)
-    for y in range(3, 14):
-        for x in range(x0 + 4, x0 + 16):
-            if img[y][x][:3] == colour and (x - x0 - 15.5) ** 2 + (y - 15.5) ** 2 > 10.5 ** 2 and x + y < x0 + 21:
-                img[y][x] = light
-    draw_logo(img, x0)
-    # label area: rows icon_rows+1 .. icon_rows+18 = the inside of the 20 px button
-    rect(img, 0, icon_rows + 1, w - 1, icon_rows + 18, (18, 21, 28, 255))
-    rounded(img, 1, icon_rows + 2, w - 2, icon_rows + 17, 3, (38, 44, 58, 255))
-    return img
-
-
-def logo_messages(img, x0):
-    rounded(img, x0 + 7, 8, x0 + 24, 20, 3, WHITE)
-    for (x, y) in ((9, 21), (10, 21), (11, 21), (9, 22), (10, 22), (9, 23)):
-        img[y][x0 + x] = WHITE
-    for x in (11, 15, 19):
-        rect(img, x0 + x, 13, x0 + x + 1, 14, (52, 199, 89, 255))
-
-
-def logo_camera(img, x0):
-    body = (240, 243, 248, 255)
-    rounded(img, x0 + 6, 10, x0 + 25, 23, 2, body)
-    rect(img, x0 + 12, 7, x0 + 19, 9, body)
-    disc(img, x0 + 15.5, 16.5, 4.6, (52, 58, 74, 255))
-    disc(img, x0 + 15.5, 16.5, 2.6, (110, 190, 255, 255))
-    img[15][x0 + 14] = WHITE
-    rect(img, x0 + 21, 12, x0 + 22, 13, (255, 190, 70, 255))
-
-
-def logo_settings(img, x0):
-    cog = (240, 243, 248, 255)
-    cx, cy = x0 + 15.5, 15.5
-    for y in range(32):
-        for x in range(x0, x0 + 32):
-            dx, dy = x - cx, y - cy
-            r = math.hypot(dx, dy)
-            ang = math.atan2(dy, dx)
-            tooth = math.cos(ang * 8) > 0.25
-            if 3.4 < r <= (10.6 if tooth else 8.2):
-                img[y][x] = cog
-
-
-def badge(text):
-    """Unread badge on an app icon: a red disc with a 3x5 pixel number."""
-    digits = {"1": ["010", "110", "010", "010", "111"], "2": ["110", "001", "010", "100", "111"],
-              "3": ["110", "001", "010", "001", "110"], "4": ["101", "101", "111", "001", "001"],
-              "5": ["111", "100", "110", "001", "110"], "6": ["011", "100", "110", "101", "010"],
-              "7": ["111", "001", "010", "010", "010"], "8": ["010", "101", "010", "101", "010"],
-              "9": ["010", "101", "011", "001", "110"], "+": ["000", "010", "111", "010", "000"]}
-    img = blank(16, 11)
-    w = 11 if len(text) == 1 else 15
-    rounded(img, 0, 0, w - 1, 10, 5, (120, 12, 18, 255))
-    rounded(img, 1, 1, w - 2, 9, 4, (232, 40, 46, 255))
-    x = (w - (len(text) * 4 - 1)) // 2
-    for ch in text:
-        for ry, row in enumerate(digits[ch]):
-            for rx, c in enumerate(row):
-                if c == "1":
-                    img[3 + ry][x + rx] = WHITE
-        x += 4
+def photo_frame():
+    """1 px outline around a 128x128 photo (tinted by the text colour)."""
+    s = PHOTO_SIZE + 2
+    img = blank(s, s)
+    for i in range(s):
+        img[0][i] = img[s - 1][i] = img[i][0] = img[i][s - 1] = WHITE
     return img
 
 
@@ -443,9 +472,28 @@ def small_glyphs():
     lock = grid(["........", "..###...", ".#...#..", ".#####..", ".##.##..", ".#####..", "........", "........"])
     pencil = grid(["........", ".....##.", "....###.", "...###..", "..###...", ".###....", ".##.....", "........"])
     rec = grid(["........", "..###...", ".#####..", ".#####..", ".#####..", "..###...", "........", "........"])
+    # Minestagram and the tab bar
+    heart = grid([".##.##..", "#..#..#.", "#.....#.", "#.....#.", ".#...#..", "..#.#...", "...#....", "........"])
+    heart_full = grid([".##.##..", "#######.", "#######.", "#######.", ".#####..", "..###...", "...#....", "........"])
+    comment = grid(["........", ".#####..", "#.....#.", "#.....#.", "#.....#.", ".#####..", ".#......", "#......."])
+    repost = grid(["..#.....", ".######.", "..#...#.", "......#.", ".#......", ".#...#..", ".######.", ".....#.."])
+    home = grid(["...#....", "..###...", ".#####..", "#######.", ".#####..", ".##.##..", ".##.##..", "........"])
+    search = grid([".###....", "#...#...", "#...#...", "#...#...", ".###....", ".....#..", "......#.", "........"])
+    plus = grid(["#######.", "#.....#.", "#..#..#.", "#.###.#.", "#..#..#.", "#.....#.", "#######.", "........"])
+    profile = grid(["..###...", ".#...#..", "#.....#.", "#.....#.", "#.....#.", ".#...#..", "..###...", "........"])
+    left = grid(["........", "....#...", "...#....", "..#.....", "...#....", "....#...", "........", "........"])
+    right = grid(["........", "..#.....", "...#....", "....#...", "...#....", "..#.....", "........", "........"])
+    play = grid(["........", ".#......", ".###....", ".#####..", ".###....", ".#......", "........", "........"])
+    image = grid(["#######.", "#.....#.", "#.##..#.", "#.....#.", "#..#..#.", "#.###.#.", "#######.", "........"])
+    share = grid(["...#....", "..###...", ".#.#.#..", "...#....", "#..#..#.", "#.....#.", "#######.", "........"])
+    printer = grid(["..###...", "..#.#...", "#######.", "#.....#.", "#.###.#.", "..#.#...", "..###...", "........"])
+    trash = grid(["..###...", "#######.", ".#####..", ".#.#.#..", ".#.#.#..", ".#.#.#..", ".#####..", "........"])
     return [("mark.dot", dot), ("mark.tick", tick), ("mark.ticks", ticks), ("mark.back", back), ("mark.camera", cam),
             ("mark.clock", clock), ("mark.up", up), ("mark.down", down), ("mark.lock", lock), ("mark.pencil", pencil),
-            ("mark.rec", rec)]
+            ("mark.rec", rec), ("mark.heart", heart), ("mark.heart_full", heart_full), ("mark.comment", comment),
+            ("mark.repost", repost), ("mark.home", home), ("mark.search", search), ("mark.plus", plus),
+            ("mark.profile", profile), ("mark.left", left), ("mark.right", right), ("mark.play", play),
+            ("mark.image", image), ("mark.share", share), ("mark.print", printer), ("mark.trash", trash)]
 
 
 def build_font():
@@ -454,26 +502,22 @@ def build_font():
         cells, h, ascent = bubble_row(kind)
         fb.sheet("bubble_%s.png" % kind, cells, 128, h, h, ascent)
     for h in PANEL_HEIGHTS:
-        fb.sheet("panel_%d.png" % h, [("panel.%d" % h, panel(h))], PANEL_W, h, h, 7 + PANEL_TOP)
-    # header bar: behind the title line, 2 px above the text top (so it stays clear of the clock on the line above)
-    fb.sheet("header.png", [("header", header_bar())], PANEL_W, HEADER_H, HEADER_H, 7 + 2)
+        # the phone's top hangs PANEL_TOP px above the first line; continuation pieces start at a line's top
+        fb.sheet("panel_%d.png" % h, [("panel.%d" % h, panel(h, True))], PANEL_W, h, h, 7 + PANEL_TOP)
+        fb.sheet("panelx_%d.png" % h, [("panelx.%d" % h, panel(h, False))], PANEL_W, h, h, 7)
+    # button rows. A label is drawn 2 px inside its button with the text top 6 px below the button's top: the row
+    # band starts at the button's top (ascent 7 + 6), a cover 1 px inside the border (ascent 7 + 5)
+    fb.sheet("bands.png", [("band.%d" % n, band(n)) for n in sorted(BUTTON_COLUMNS)], PANEL_W, 22, 22, 7 + 6)
+    fb.sheet("band_home.png", [("band.home", band_home())], PANEL_W, 20, 20, 7 + 6)
+    fb.sheet("covers.png", [("cover.%d" % w, cover(w)) for w in sorted(set(BUTTON_COLUMNS.values()))],
+             max(BUTTON_COLUMNS.values()) - 2, 18, 18, 7 + 5)
     # app icons: 16 px, centred on a text line (text rows 0..7 -> icon rows -4..11)
-    fb.sheet("icons.png", [("icon.messages", icon_messages()), ("icon.camera", icon_camera()),
-                           ("icon.contacts", icon_contacts())], 16, 16, 16, 7 + 4)
+    icons = [("app.photos", photos_icon())]
+    icons += [("app.%s" % name, app_icon(col, logo)) for name, (col, logo) in APP_LOGOS.items() if logo]
+    fb.sheet("icons.png", icons, 16, 16, 16, 7 + 4)
     fb.sheet("marks.png", small_glyphs(), 8, 8, 8, 7)
-    # home-screen apps: the tile hangs from 40 px above the label text down to the bottom of the button
-    tile_h = APP_ICON + APP_ICON_GAP + 19
-    tile_ascent = 7 + 6 + APP_ICON + APP_ICON_GAP
-    fb.sheet("apps.png", [("app.messages", app_tile(logo_messages, (52, 199, 89))),
-                          ("app.camera", app_tile(logo_camera, (96, 104, 124))),
-                          ("app.settings", app_tile(logo_settings, (72, 132, 240)))],
-             APP_BUTTON_W - 2, tile_h, tile_h, tile_ascent)
-    # the badge sits 2 px above the icon's top. A glyph may not have an ascent larger than its height, so the
-    # badge cell is as tall as its ascent, with the art in the top rows
-    badge_h = tile_ascent + 2
-    fb.sheet("badges.png", [("badge.%s" % t, badge(t) + blank(16, badge_h - 11))
-                            for t in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "9+")],
-             16, badge_h, badge_h, badge_h)
+    fb.sheet("ring.png", [("ring", ring())], 12, 12, 12, 7 + 2)
+    fb.sheet("photo_frame.png", [("photo.frame", photo_frame())], PHOTO_SIZE + 2, PHOTO_SIZE + 2, PHOTO_SIZE + 2, 7 + 1)
     fb.big_digits()
     fb.spaces()
     path = os.path.join(ASSETS, "font", "ui.json")
@@ -482,6 +526,28 @@ def build_font():
         json.dump({"providers": fb.providers}, f, indent=1, ensure_ascii=True)
         f.write("\n")
     return fb
+
+
+def photo_font():
+    """The phone:photo font: one white 1x1 pixel per photo row. Row r is drawn r px below the top of its text line
+    (ascent 7 - r; the client only rejects an ascent above the height). A glyph advances 2 px (bitmap glyphs advance
+    by their width + 1), so a row is drawn in two passes, even then odd columns. The plugin colours every pixel
+    through the text colour; see ui/PhotoText.java."""
+    providers = []
+    for r in range(PHOTO_SIZE):
+        # the client rejects an ascent above the glyph's height: the top rows get a taller cell, pixel on top
+        h = max(1, 7 - r)
+        name = "px.png" if h == 1 else "px_%d.png" % h
+        save(os.path.join(TEX_FONT, name), [[WHITE]] + [[T]] * (h - 1))
+        providers.append({"type": "bitmap", "file": "phone:font/" + name, "height": h, "ascent": 7 - r,
+                          "chars": [chr(PHOTO_BASE + r)]})
+    path = os.path.join(ASSETS, "font", "photo.json")
+    with open(path, "w") as f:
+        json.dump({"providers": providers}, f, indent=1, ensure_ascii=True)
+        f.write("\n")
+
+
+PHOTO_BASE = 0xE000
 
 
 def write_glyph_table(fb):
@@ -495,15 +561,17 @@ def write_glyph_table(fb):
         f.write("layout.content_width=%d\n" % CONTENT_W)
         f.write("layout.panel_width=%d\n" % PANEL_W)
         f.write("layout.panel_margin=%d\n" % PANEL_MARGIN)
+        f.write("layout.body_width=%d\n" % BODY_W)
         f.write("layout.panel_top=%d\n" % PANEL_TOP)
         f.write("layout.panel_heights=%s\n" % ",".join(str(h) for h in PANEL_HEIGHTS))
+        f.write("layout.button_columns=%s\n" % ",".join("%d:%d" % (n, w) for n, w in sorted(BUTTON_COLUMNS.items())))
         f.write("layout.cap_width=%d\n" % CAP_W)
         f.write("layout.tail_width=%d\n" % TAIL_W)
         f.write("layout.tile_widths=%s\n" % ",".join(str(w) for w in TILE_WIDTHS))
         f.write("layout.space_powers=%d\n" % SPACE_POWERS)
-        f.write("layout.app_button_width=%d\n" % APP_BUTTON_W)
-        f.write("layout.app_icon_rows=%d\n" % (APP_ICON + APP_ICON_GAP))
         f.write("layout.big_scale=%d\n" % BIG_SCALE)
+        f.write("photo.size=%d\n" % PHOTO_SIZE)
+        f.write("photo.base=%04X\n" % PHOTO_BASE)
         f.write("camera.zoom_levels=%s\n" % ",".join(str(z) for z in ZOOM_LEVELS))
 
 
@@ -612,7 +680,10 @@ def main():
     save(os.path.join(TEX_ITEM, "phone_unread.png"), phone_texture(True))
     save(os.path.join(TEX_ITEM, "photo_paper.png"), photo_paper_texture())
     save(os.path.join(TEX_ITEM, "photo.png"), photo_texture())
+    # every font texture is generated: start from an empty folder so renamed pieces leave nothing behind
+    shutil.rmtree(TEX_FONT, ignore_errors=True)
     fb = build_font()
+    photo_font()
     write_glyph_table(fb)
     write_post_effects()
     write_sounds()

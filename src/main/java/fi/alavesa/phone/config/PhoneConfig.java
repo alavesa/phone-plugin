@@ -76,10 +76,25 @@ public final class PhoneConfig {
     public final int editWindowMinutes;
 
     public final boolean playerSkins;
+    public final boolean texturesEnabled;
+    public final boolean texturesDownload;
+    public final List<String> texturesExtraPacks;
     public final boolean videoEnabled;
     public final int videoFps;
     public final int videoMaxSeconds;
     public final int videoMaxDistance;
+
+    public final int photosLimit;
+    public final int playbackFps;
+
+    public final boolean gramEnabled;
+    public final int gramCaptionLength;
+    public final int gramCommentLength;
+    public final int gramBioLength;
+    public final int gramCommentsPerMinute;
+    public final int gramPostCooldownSeconds;
+    public final boolean gramAutoplay;
+    public final boolean gramNotify;
 
     public final boolean packSendOnJoin;
     public final PackMode packMode;
@@ -174,10 +189,25 @@ public final class PhoneConfig {
         editWindowMinutes = Math.max(0, c.getInt("messaging.edit-window-minutes", 0));
 
         playerSkins = c.getBoolean("camera.player-skins", true);
+        texturesEnabled = c.getBoolean("camera.textures.enabled", true);
+        texturesDownload = c.getBoolean("camera.textures.download", true);
+        texturesExtraPacks = List.copyOf(c.getStringList("camera.textures.extra-packs"));
         videoEnabled = c.getBoolean("camera.video.enabled", true);
         videoFps = clamp(c.getInt("camera.video.fps", 4), 1, 10);
         videoMaxSeconds = clamp(c.getInt("camera.video.max-seconds", 6), 1, 30);
         videoMaxDistance = clamp(c.getInt("camera.video.max-distance", 48), 16, 128);
+
+        photosLimit = clamp(c.getInt("photos.max-per-player", 100), 1, 10_000);
+        playbackFps = clamp(c.getInt("photos.playback-fps", 4), 1, 10);
+
+        gramEnabled = c.getBoolean("minestagram.enabled", true);
+        gramCaptionLength = clamp(c.getInt("minestagram.caption-length", 150), 1, 500);
+        gramCommentLength = clamp(c.getInt("minestagram.comment-length", 120), 1, 500);
+        gramBioLength = clamp(c.getInt("minestagram.bio-length", 60), 1, 200);
+        gramCommentsPerMinute = clamp(c.getInt("minestagram.comments-per-minute", 6), 1, 1000);
+        gramPostCooldownSeconds = clamp(c.getInt("minestagram.post-cooldown-seconds", 30), 0, 86_400);
+        gramAutoplay = c.getBoolean("minestagram.autoplay-videos", true);
+        gramNotify = c.getBoolean("minestagram.notify", true);
 
         packSendOnJoin = c.getBoolean("resource-pack.send-on-join", true);
         packMode = enumOf(PackMode.class, c.getString("resource-pack.mode"), PackMode.AUTO, "resource-pack.mode", log);

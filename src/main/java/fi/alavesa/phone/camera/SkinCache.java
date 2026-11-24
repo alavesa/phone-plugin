@@ -46,6 +46,38 @@ public final class SkinCache implements Listener {
         return skin != null && skin.slim;
     }
 
+    /** The stand-in skin (64x64 ARGB) for heads whose skin is not known. */
+    int[] standInPixels() {
+        return standIn;
+    }
+
+    private final Map<String, int[]> byUrl = new ConcurrentHashMap<>();
+    private final java.util.Set<String> fetching = ConcurrentHashMap.newKeySet();
+
+    /**
+     * A skin by its texture address (player heads on items): the pixels once downloaded, null until then (the first
+     * photo of a new head shows the stand-in; the download starts in the background).
+     */
+    int[] byUrl(String url) {
+        int[] px = byUrl.get(url);
+        if (px != null || !download || !url.startsWith("http") || byUrl.size() > 512 || !fetching.add(url)) return px;
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                BufferedImage image = ImageIO.read(java.net.URI.create(url).toURL());
+                if (image != null && image.getWidth() == 64 && (image.getHeight() == 64 || image.getHeight() == 32)) {
+                    int[] pixels = new int[64 * 64];
+                    image.getRGB(0, 0, 64, image.getHeight(), pixels, 0, 64);
+                    byUrl.put(url, pixels);
+                }
+            } catch (Exception e) {
+                plugin.getLogger().fine("Head skin " + url + " could not be downloaded: " + e);
+            } finally {
+                fetching.remove(url);
+            }
+        });
+        return null;
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
         fetch(e.getPlayer());

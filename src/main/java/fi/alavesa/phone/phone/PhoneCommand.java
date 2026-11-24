@@ -65,6 +65,8 @@ public final class PhoneCommand {
                                 .then(Commands.literal("home").executes(ctx -> open(target(ctx), "home")))
                                 .then(Commands.literal("messages").executes(ctx -> open(target(ctx), "messages")))
                                 .then(Commands.literal("camera").executes(ctx -> open(target(ctx), "camera")))
+                                .then(Commands.literal("photos").executes(ctx -> open(target(ctx), "photos")))
+                                .then(Commands.literal("gram").executes(ctx -> open(target(ctx), "gram")))
                                 .then(Commands.literal("chat")
                                         .then(Commands.argument("name", StringArgumentType.word()).suggests(ONLINE)
                                                 .executes(ctx -> {
@@ -75,6 +77,14 @@ public final class PhoneCommand {
                                                         plugin.ui().openConversation(target, known.id(), 0);
                                                     });
                                                 })))))
+                .then(Commands.literal("click")
+                        .requires(s -> s.getSender().hasPermission("phone.admin"))
+                        .then(Commands.argument("player", ArgumentTypes.player())
+                                .then(Commands.argument("path", StringArgumentType.greedyString())
+                                        .executes(ctx -> {
+                                            plugin.ui().click(target(ctx), StringArgumentType.getString(ctx, "path"));
+                                            return Command.SINGLE_SUCCESS;
+                                        }))))
                 .then(Commands.literal("shutter")
                         .requires(s -> s.getSender().hasPermission("phone.admin"))
                         .then(Commands.argument("player", ArgumentTypes.player())
@@ -148,6 +158,18 @@ public final class PhoneCommand {
                         .then(Commands.literal("reset").executes(ctx -> fov(ctx, null)))
                         .then(Commands.argument("degrees", DoubleArgumentType.doubleArg(30, 110))
                                 .executes(ctx -> fov(ctx, DoubleArgumentType.getDouble(ctx, "degrees")))))
+                .then(Commands.literal("gram")
+                        .requires(s -> s.getSender().hasPermission("phone.gram.moderate"))
+                        .then(Commands.literal("delete")
+                                .then(Commands.argument("post", IntegerArgumentType.integer(1))
+                                        .executes(ctx -> {
+                                            CommandSender sender = ctx.getSource().getSender();
+                                            int post = IntegerArgumentType.getInteger(ctx, "post");
+                                            plugin.gram().deleteAny(post, result -> sender.sendMessage(plugin.lang().get(
+                                                    result == fi.alavesa.phone.social.Gram.Result.OK ? "command.gram-deleted" : "command.gram-not-found",
+                                                    Lang.ph("post", post))));
+                                            return Command.SINGLE_SUCCESS;
+                                        }))))
                 .then(Commands.literal("pack")
                         .executes(ctx -> {
                             if (player(ctx) instanceof Player p && !plugin.pack().send(p)) p.sendMessage(plugin.lang().get("command.no-pack"));
@@ -184,6 +206,8 @@ public final class PhoneCommand {
         plugin.ui().unlockFor(target);
         switch (screen) {
             case "messages" -> plugin.ui().openContacts(target, 0);
+            case "photos" -> plugin.ui().openPhotos(target, 0);
+            case "gram" -> plugin.ui().openGram(target);
             case "camera" -> {
                 plugin.ui().close(target, true);
                 if (plugin.items().holdsPhone(target)) plugin.camera().enter(target);

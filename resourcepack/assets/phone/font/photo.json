@@ -1,0 +1,1156 @@
+{
+ "providers": [
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_7.png",
+   "height": 7,
+   "ascent": 7,
+   "chars": [
+    "\ue000"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_6.png",
+   "height": 6,
+   "ascent": 6,
+   "chars": [
+    "\ue001"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_5.png",
+   "height": 5,
+   "ascent": 5,
+   "chars": [
+    "\ue002"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_4.png",
+   "height": 4,
+   "ascent": 4,
+   "chars": [
+    "\ue003"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_3.png",
+   "height": 3,
+   "ascent": 3,
+   "chars": [
+    "\ue004"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px_2.png",
+   "height": 2,
+   "ascent": 2,
+   "chars": [
+    "\ue005"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": 1,
+   "chars": [
+    "\ue006"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": 0,
+   "chars": [
+    "\ue007"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -1,
+   "chars": [
+    "\ue008"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -2,
+   "chars": [
+    "\ue009"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -3,
+   "chars": [
+    "\ue00a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -4,
+   "chars": [
+    "\ue00b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -5,
+   "chars": [
+    "\ue00c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -6,
+   "chars": [
+    "\ue00d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -7,
+   "chars": [
+    "\ue00e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -8,
+   "chars": [
+    "\ue00f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -9,
+   "chars": [
+    "\ue010"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -10,
+   "chars": [
+    "\ue011"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -11,
+   "chars": [
+    "\ue012"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -12,
+   "chars": [
+    "\ue013"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -13,
+   "chars": [
+    "\ue014"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -14,
+   "chars": [
+    "\ue015"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -15,
+   "chars": [
+    "\ue016"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -16,
+   "chars": [
+    "\ue017"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -17,
+   "chars": [
+    "\ue018"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -18,
+   "chars": [
+    "\ue019"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -19,
+   "chars": [
+    "\ue01a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -20,
+   "chars": [
+    "\ue01b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -21,
+   "chars": [
+    "\ue01c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -22,
+   "chars": [
+    "\ue01d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -23,
+   "chars": [
+    "\ue01e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -24,
+   "chars": [
+    "\ue01f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -25,
+   "chars": [
+    "\ue020"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -26,
+   "chars": [
+    "\ue021"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -27,
+   "chars": [
+    "\ue022"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -28,
+   "chars": [
+    "\ue023"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -29,
+   "chars": [
+    "\ue024"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -30,
+   "chars": [
+    "\ue025"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -31,
+   "chars": [
+    "\ue026"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -32,
+   "chars": [
+    "\ue027"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -33,
+   "chars": [
+    "\ue028"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -34,
+   "chars": [
+    "\ue029"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -35,
+   "chars": [
+    "\ue02a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -36,
+   "chars": [
+    "\ue02b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -37,
+   "chars": [
+    "\ue02c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -38,
+   "chars": [
+    "\ue02d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -39,
+   "chars": [
+    "\ue02e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -40,
+   "chars": [
+    "\ue02f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -41,
+   "chars": [
+    "\ue030"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -42,
+   "chars": [
+    "\ue031"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -43,
+   "chars": [
+    "\ue032"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -44,
+   "chars": [
+    "\ue033"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -45,
+   "chars": [
+    "\ue034"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -46,
+   "chars": [
+    "\ue035"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -47,
+   "chars": [
+    "\ue036"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -48,
+   "chars": [
+    "\ue037"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -49,
+   "chars": [
+    "\ue038"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -50,
+   "chars": [
+    "\ue039"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -51,
+   "chars": [
+    "\ue03a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -52,
+   "chars": [
+    "\ue03b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -53,
+   "chars": [
+    "\ue03c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -54,
+   "chars": [
+    "\ue03d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -55,
+   "chars": [
+    "\ue03e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -56,
+   "chars": [
+    "\ue03f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -57,
+   "chars": [
+    "\ue040"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -58,
+   "chars": [
+    "\ue041"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -59,
+   "chars": [
+    "\ue042"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -60,
+   "chars": [
+    "\ue043"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -61,
+   "chars": [
+    "\ue044"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -62,
+   "chars": [
+    "\ue045"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -63,
+   "chars": [
+    "\ue046"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -64,
+   "chars": [
+    "\ue047"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -65,
+   "chars": [
+    "\ue048"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -66,
+   "chars": [
+    "\ue049"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -67,
+   "chars": [
+    "\ue04a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -68,
+   "chars": [
+    "\ue04b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -69,
+   "chars": [
+    "\ue04c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -70,
+   "chars": [
+    "\ue04d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -71,
+   "chars": [
+    "\ue04e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -72,
+   "chars": [
+    "\ue04f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -73,
+   "chars": [
+    "\ue050"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -74,
+   "chars": [
+    "\ue051"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -75,
+   "chars": [
+    "\ue052"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -76,
+   "chars": [
+    "\ue053"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -77,
+   "chars": [
+    "\ue054"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -78,
+   "chars": [
+    "\ue055"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -79,
+   "chars": [
+    "\ue056"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -80,
+   "chars": [
+    "\ue057"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -81,
+   "chars": [
+    "\ue058"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -82,
+   "chars": [
+    "\ue059"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -83,
+   "chars": [
+    "\ue05a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -84,
+   "chars": [
+    "\ue05b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -85,
+   "chars": [
+    "\ue05c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -86,
+   "chars": [
+    "\ue05d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -87,
+   "chars": [
+    "\ue05e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -88,
+   "chars": [
+    "\ue05f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -89,
+   "chars": [
+    "\ue060"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -90,
+   "chars": [
+    "\ue061"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -91,
+   "chars": [
+    "\ue062"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -92,
+   "chars": [
+    "\ue063"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -93,
+   "chars": [
+    "\ue064"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -94,
+   "chars": [
+    "\ue065"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -95,
+   "chars": [
+    "\ue066"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -96,
+   "chars": [
+    "\ue067"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -97,
+   "chars": [
+    "\ue068"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -98,
+   "chars": [
+    "\ue069"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -99,
+   "chars": [
+    "\ue06a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -100,
+   "chars": [
+    "\ue06b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -101,
+   "chars": [
+    "\ue06c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -102,
+   "chars": [
+    "\ue06d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -103,
+   "chars": [
+    "\ue06e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -104,
+   "chars": [
+    "\ue06f"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -105,
+   "chars": [
+    "\ue070"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -106,
+   "chars": [
+    "\ue071"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -107,
+   "chars": [
+    "\ue072"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -108,
+   "chars": [
+    "\ue073"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -109,
+   "chars": [
+    "\ue074"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -110,
+   "chars": [
+    "\ue075"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -111,
+   "chars": [
+    "\ue076"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -112,
+   "chars": [
+    "\ue077"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -113,
+   "chars": [
+    "\ue078"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -114,
+   "chars": [
+    "\ue079"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -115,
+   "chars": [
+    "\ue07a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -116,
+   "chars": [
+    "\ue07b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -117,
+   "chars": [
+    "\ue07c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -118,
+   "chars": [
+    "\ue07d"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -119,
+   "chars": [
+    "\ue07e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/px.png",
+   "height": 1,
+   "ascent": -120,
+   "chars": [
+    "\ue07f"
+   ]
+  }
+ ]
+}

@@ -3,12 +3,15 @@ package fi.alavesa.phone.ui;
 import fi.alavesa.phone.camera.CameraService;
 import fi.alavesa.phone.config.Lang;
 import fi.alavesa.phone.config.PhoneConfig;
+import fi.alavesa.phone.media.Gallery;
+import fi.alavesa.phone.media.MediaStore;
 import fi.alavesa.phone.messaging.ContactRow;
 import fi.alavesa.phone.messaging.ConversationPage;
 import fi.alavesa.phone.messaging.Message;
 import fi.alavesa.phone.messaging.MessageService;
 import fi.alavesa.phone.phone.PhoneItems;
 import fi.alavesa.phone.resourcepack.PackService;
+import fi.alavesa.phone.social.Gram;
 import fi.alavesa.phone.storage.Database;
 import fi.alavesa.phone.storage.PlayerSettings;
 import fi.alavesa.phone.util.PostFx;
@@ -24,6 +27,7 @@ import io.papermc.paper.registry.data.dialog.action.DialogAction;
 import io.papermc.paper.registry.data.dialog.body.DialogBody;
 import io.papermc.paper.registry.data.dialog.input.DialogInput;
 import io.papermc.paper.registry.data.dialog.type.DialogType;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
@@ -40,6 +44,8 @@ import java.util.concurrent.CompletableFuture;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -54,13 +60,15 @@ import org.bukkit.scheduler.BukkitTask;
  *
  * <p><b>Buttons.</b> Every button is a custom click action {@code phone:<path>} (for example
  * {@code phone:conv/<uuid>/0}); the client sends it back together with the values of the dialog's inputs and
- * {@link #onClick} routes it. Nothing is kept per dialog on the server, so an old dialog can never dangle.
+ * {@link #onClick} routes it. Nothing is kept per dialog on the server, so an old dialog can never dangle. Buttons are
+ * laid out in grids of 1, 2, 3 or 5 columns ({@link Grid}); on the drawn phone every row is filled up and a last row
+ * with the home indicator closes the phone (it goes to the home screen).
  *
  * <p><b>Dialogs cannot be updated in place.</b> The only way to change what a player sees is to send a whole new
  * dialog, which resets its text field. Typed text therefore survives only when the client tells us about it: every
  * button on the conversation screen carries the field's content, and it is put back as the field's initial value. A
  * refresh the player did not ask for (a message arriving while the conversation is open) cannot know the text typed
- * since the last button press; see {@code messaging.auto-refresh}.
+ * since the last button press; see {@code messaging.auto-refresh}. Videos play the same way: one dialog per frame.
  *
  * <p><b>Closing.</b> The client sends nothing when a dialog closes, except that Escape runs the dialog's exit
  * action. Every screen has one (Back or Close), so Escape walks back one screen at a time and the server always
@@ -69,9 +77,10 @@ import org.bukkit.scheduler.BukkitTask;
  * <p><b>Lock.</b> With passcodes on, a phone that is opened from nothing shows the lock screen first; the session
  * stays unlocked while a screen is open (and while the camera is in use) and locks again when the phone closes.
  */
-public final class UiController implements Listener, MessageService.Notifier, CameraService.ResultScreen {
+public final class UiController implements Listener, MessageService.Notifier, CameraService.ResultScreen, Gram.Notifier {
 
-    private enum Screen { NONE, LOCK, HOME, CONTACTS, CONVERSATION, OWN_MESSAGES, EDIT_MESSAGE, PHOTO, SETTINGS }
+    private enum Screen { NONE, LOCK, HOME, CONTACTS, CONVERSATION, OWN_MESSAGES, EDIT_MESSAGE, SETTINGS, PHOTOS, SHARE,
+        GRAM_FEED, GRAM_COMMENTS, GRAM_ACCOUNT, GRAM_COMPOSE, GRAM_SEARCH, GRAM_ACTIVITY, GRAM_DELETE }
 
     private static final class Session {
         Screen screen = Screen.NONE;
@@ -88,11 +97,28 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         boolean sending;
         long shownTick;
         BukkitTask refresh;
+        BukkitTask playback;
         final Map<UUID, String> drafts = new HashMap<>();
+        // Photos
+        int photoIndex;
+        boolean fromCamera;
+        long confirmDelete = -1;
+        // Minestagram: the feed or profile being looked at, and what Back returns to
+        UUID gramProfile;
+        int gramIndex;
+        Database.GramPost gramPost;
+        int commentsSkip;
+        String commentDraft = "";
+        int composeIndex;
+        String captionDraft = "";
+        String gramQuery = "";
+        long confirmPostDelete = -1;
+        Runnable gramBack;
     }
 
     private static final Key SCREEN_FX = Key.key("phone", "screen");
     private static final String NAMESPACE = "phone";
+    private static final int COMMENTS_PER_PAGE = 4;
 
     private final Plugin plugin;
     private final Database db;
@@ -103,6 +129,8 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
     private final PostFx postFx;
     private final Sounds sounds;
     private final CameraService camera;
+    private final Gallery gallery;
+    private final Gram gram;
     private final Glyphs glyphs;
     private final FontWidths widths;
     private PhoneConfig cfg;
@@ -112,7 +140,8 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
     private final Map<UUID, Session> sessions = new HashMap<>();
 
     public UiController(Plugin plugin, Database db, MessageService messages, PhoneItems items, PackService pack, PlayerSettings settings,
-                        PostFx postFx, Sounds sounds, CameraService camera, Glyphs glyphs, FontWidths widths, PhoneConfig cfg, Lang lang) {
+                        PostFx postFx, Sounds sounds, CameraService camera, Gallery gallery, Gram gram, Glyphs glyphs, FontWidths widths,
+                        PhoneConfig cfg, Lang lang) {
         this.plugin = plugin;
         this.db = db;
         this.messages = messages;
@@ -122,6 +151,8 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         this.postFx = postFx;
         this.sounds = sounds;
         this.camera = camera;
+        this.gallery = gallery;
+        this.gram = gram;
         this.glyphs = glyphs;
         this.widths = widths;
         reload(cfg, lang);
@@ -153,6 +184,16 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         return t.toLocalDate().equals(LocalDate.now(cfg.zone)) ? time : t.format(cfg.dateFormat) + " " + time;
     }
 
+    /** "now", "5m", "3h", "2d", or the date for older things. */
+    private String age(long millis) {
+        Duration d = Duration.ofMillis(Math.max(0, System.currentTimeMillis() - millis));
+        if (d.toMinutes() < 1) return lang.plain("ui.gram.now");
+        if (d.toHours() < 1) return d.toMinutes() + "m";
+        if (d.toDays() < 1) return d.toHours() + "h";
+        if (d.toDays() < 7) return d.toDays() + "d";
+        return Instant.ofEpochMilli(millis).atZone(cfg.zone).format(cfg.dateFormat);
+    }
+
     /** May this player use a phone right now? Tells them when not. */
     private boolean mayUse(Player player) {
         if (!player.hasPermission("phone.use")) {
@@ -168,22 +209,75 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
 
     // ---- dialog plumbing --------------------------------------------------------------------------------------------
 
-    private static ActionButton button(Component label, int width, String path) {
-        return ActionButton.builder(label).width(width).action(DialogAction.customClick(Key.key(NAMESPACE, path), null)).build();
+    private static ActionButton button(Component label, int width, String path, Component tooltip) {
+        ActionButton.Builder b = ActionButton.builder(label).width(width).action(DialogAction.customClick(Key.key(NAMESPACE, path), null));
+        if (tooltip != null) b.tooltip(tooltip);
+        return b.build();
     }
 
     private static DialogInput field(String key, Component label, boolean labelVisible, int width, String initial, int maxLength) {
         return DialogInput.text(key, label).width(width).labelVisible(labelVisible).initial(initial).maxLength(maxLength).build();
     }
 
-    /** Height of what a dialog stacks under its text: 10 px gaps, 20 px inputs (+13 with a label), 20 px button rows 2 px apart. */
-    private static int below(int plainInputs, int labelledInputs, int buttons, int columns) {
-        int rows = (buttons + columns - 1) / columns;
-        return plainInputs * 30 + labelledInputs * 43 + (rows > 0 ? 10 + rows * 22 - 2 : 0);
+    /** Height of the inputs a dialog stacks between its text and its buttons: 10 px gap + 20 px field (+13 with a label). */
+    private static int inputs(int plainInputs, int labelledInputs) {
+        return plainInputs * 30 + labelledInputs * 43;
     }
 
-    private void show(Player player, Session s, Screen screen, Component body, int width, List<DialogInput> inputs,
-                      List<ActionButton> buttons, int columns, String exitLabel, String exitPath) {
+    /**
+     * The buttons of a screen: a grid of 1, 2, 3 or 5 columns (the widths the pack's row bands exist for). On the
+     * drawn phone {@link #finish} fills the last row with blank buttons and adds the home-indicator row.
+     */
+    private final class Grid {
+        final ScreenRenderer r;
+        final int columns;
+        final List<ActionButton> out = new ArrayList<>();
+
+        Grid(ScreenRenderer r, int columns) {
+            this.r = r;
+            this.columns = columns;
+        }
+
+        boolean first() {
+            return out.size() % columns == 0;
+        }
+
+        Grid add(Views.Btn b) {
+            Component tip = b.tooltip() == null ? null : Component.text(b.tooltip());
+            out.add(button(r.button(b, columns, first()), r.buttonWidth(columns), b.path(), tip));
+            return this;
+        }
+
+        Grid add(String icon, String label, Views.Tone tone, String path) {
+            return add(new Views.Btn(icon, label, tone, path, null));
+        }
+
+        /** A button with a label of its own (contacts, accounts ...); {@code label} gets "is first in its row". */
+        Grid add(java.util.function.Function<Boolean, Component> label, String path, String tooltip) {
+            out.add(button(label.apply(first()), r.buttonWidth(columns), path, tooltip == null ? null : Component.text(tooltip)));
+            return this;
+        }
+
+        List<ActionButton> finish() {
+            if (!r.framed()) {
+                if (out.isEmpty()) out.add(button(r.homeBar(), r.buttonWidth(1), "home", null));
+                return out;
+            }
+            if (out.isEmpty()) add(Views.Btn.blank());
+            while (out.size() % columns != 0) add(Views.Btn.blank());
+            out.add(button(r.homeBar(), r.buttonWidth(1), "home", null));
+            return out;
+        }
+    }
+
+    private void show(Player player, Session s, Screen screen, Component body, List<DialogInput> inputs, Grid grid,
+                      String exitLabel, String exitPath) {
+        stopPlayback(s);
+        showFrame(player, s, screen, body, inputs, grid.finish(), exitLabel, exitPath, grid.r);
+    }
+
+    private void showFrame(Player player, Session s, Screen screen, Component body, List<DialogInput> inputs, List<ActionButton> buttons,
+                           String exitLabel, String exitPath, ScreenRenderer r) {
         if (s.refresh != null) {
             s.refresh.cancel();
             s.refresh = null;
@@ -193,15 +287,31 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
                 .pause(false)
                 // the dialog stays until the server answers with the next one: no flash of the world in between
                 .afterAction(DialogBase.DialogAfterAction.NONE)
-                .body(List.of(DialogBody.plainMessage(body, width)))
+                .body(List.of(DialogBody.plainMessage(body, r.bodyWidth())))
                 .inputs(inputs)
                 .build();
-        ActionButton exit = button(lang.get(exitLabel), 120, exitPath);
-        Dialog dialog = Dialog.create(b -> b.empty().base(base).type(DialogType.multiAction(buttons, exit, columns)));
+        ActionButton exit = button(lang.get(exitLabel), 120, exitPath, null);
+        Dialog dialog = Dialog.create(b -> b.empty().base(base).type(DialogType.multiAction(buttons, exit, columnsOf(buttons, r))));
         s.screen = screen;
         s.shownTick = Bukkit.getCurrentTick();
         if (cfg.screenEffect && pack.hasPack(player)) postFx.set(player, SCREEN_FX, true);
         player.showDialog(dialog);
+    }
+
+    /** Columns of a finished grid: read back from the width of its first button. */
+    private static int columnsOf(List<ActionButton> buttons, ScreenRenderer r) {
+        int w = buttons.getFirst().width();
+        for (int c : new int[] {1, 2, 3, 5}) {
+            if (r.buttonWidth(c) == w) return c;
+        }
+        return 1;
+    }
+
+    private void stopPlayback(Session s) {
+        if (s.playback != null) {
+            s.playback.cancel();
+            s.playback = null;
+        }
     }
 
     /** Closes whatever phone screen is open; the phone is locked again. {@code closeDialog}: also tell the client. */
@@ -210,6 +320,7 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         if (s == null || s.screen == Screen.NONE) return;
         if (s.refresh != null) s.refresh.cancel();
         s.refresh = null;
+        stopPlayback(s);
         s.screen = Screen.NONE;
         s.sending = false;
         postFx.set(player, SCREEN_FX, false);
@@ -247,38 +358,41 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         if (session(player).screen == Screen.NONE) session(player).screen = Screen.LOCK;
     }
 
+    private String date() {
+        ZonedDateTime now = ZonedDateTime.now(cfg.zone);
+        return now.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + ", " + now.format(cfg.dateFormat);
+    }
+
     private void showLock(Player player, Session s, Views.LockMode mode) {
         ScreenRenderer r = renderer(player);
-        ZonedDateTime now = ZonedDateTime.now(cfg.zone);
-        String date = now.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + ", " + now.format(cfg.dateFormat);
         long wait = (s.lockedUntil - System.currentTimeMillis() + 999) / 1000;
         String notice = s.notice;
         s.notice = "";
         if (mode == Views.LockMode.LOCKED && wait > 0) notice = lang.plain("ui.lock.locked-out", "seconds", wait);
 
         List<DialogInput> inputs = new ArrayList<>();
-        List<ActionButton> buttons = new ArrayList<>();
+        Grid grid = new Grid(r, 1);
+        int w = r.buttonWidth(1);
         switch (mode) {
             case LOCKED -> {
-                inputs.add(field("pin", lang.get("ui.lock.field"), true, 120, "", 4));
-                buttons.add(button(lang.get("ui.button.sign-in"), 120, "unlock"));
+                inputs.add(field("pin", lang.get("ui.lock.field"), true, w, "", 4));
+                grid.add(null, lang.plain("ui.button.sign-in"), Views.Tone.ACCENT, "unlock");
             }
             case SETUP -> {
-                inputs.add(field("new", lang.get("ui.lock.field-new"), true, 120, "", 4));
-                inputs.add(field("again", lang.get("ui.lock.field-again"), true, 120, "", 4));
-                buttons.add(button(lang.get("ui.button.set-passcode"), 120, "setcode"));
+                inputs.add(field("new", lang.get("ui.lock.field-new"), true, w, "", 4));
+                inputs.add(field("again", lang.get("ui.lock.field-again"), true, w, "", 4));
+                grid.add(null, lang.plain("ui.button.set-passcode"), Views.Tone.ACCENT, "setcode");
             }
             case CHANGE -> {
-                inputs.add(field("old", lang.get("ui.lock.field-old"), true, 120, "", 4));
-                inputs.add(field("new", lang.get("ui.lock.field-new"), true, 120, "", 4));
-                inputs.add(field("again", lang.get("ui.lock.field-again"), true, 120, "", 4));
-                buttons.add(button(lang.get("ui.button.save"), 120, "changecode"));
+                inputs.add(field("old", lang.get("ui.lock.field-old"), true, w, "", 4));
+                inputs.add(field("new", lang.get("ui.lock.field-new"), true, w, "", 4));
+                inputs.add(field("again", lang.get("ui.lock.field-again"), true, w, "", 4));
+                grid.add(null, lang.plain("ui.button.save"), Views.Tone.ACCENT, "changecode");
             }
         }
-        Component body = r.lock(new Views.Lock(now.format(cfg.timeFormat), date, player.getName(), mode, notice),
-                below(0, inputs.size(), buttons.size(), 1));
+        Component body = r.lock(new Views.Lock(clock(), date(), player.getName(), mode, notice), inputs(0, inputs.size()));
         boolean change = mode == Views.LockMode.CHANGE;
-        show(player, s, change ? Screen.SETTINGS : Screen.LOCK, body, r.bodyWidth(), inputs, buttons, 1,
+        show(player, s, change ? Screen.SETTINGS : Screen.LOCK, body, inputs, grid,
                 change ? "ui.button.back" : "ui.button.close", change ? "settings" : "close");
     }
 
@@ -340,17 +454,18 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         if (!unlocked(player, s)) return;
         ScreenRenderer r = renderer(player);
         int unread = messages.unread(player.getUniqueId());
-        int w = r.appButtonWidth();
-        List<ActionButton> buttons = new ArrayList<>();
+        Grid grid = new Grid(r, 1);
         if (player.hasPermission("phone.message")) {
-            buttons.add(button(r.appButton("messages", lang.plain("ui.button.messages"), unread), w, "contacts/0"));
+            grid.add(first -> r.appButton("messages", lang.plain("ui.button.messages"), unread, first), "contacts/0", null);
         }
         if (cfg.cameraEnabled && player.hasPermission("phone.camera")) {
-            buttons.add(button(r.appButton("camera", lang.plain("ui.button.camera"), 0), w, "camera"));
+            grid.add(first -> r.appButton("camera", lang.plain("ui.button.camera"), 0, first), "camera", null);
+            grid.add(first -> r.appButton("photos", lang.plain("ui.button.photos"), 0, first), "photos/0", null);
         }
-        buttons.add(button(r.appButton("settings", lang.plain("ui.button.settings"), 0), w, "settings"));
-        Component body = r.home(new Views.Home(clock(), player.getName(), unread), below(0, 0, buttons.size(), 3));
-        show(player, s, Screen.HOME, body, r.bodyWidth(), List.of(), buttons, 3, "ui.button.close", "close");
+        if (gram.mayUse(player)) grid.add(first -> r.appButton("gram", lang.plain("ui.button.gram"), 0, first), "gram", null);
+        grid.add(first -> r.appButton("settings", lang.plain("ui.button.settings"), 0, first), "settings", null);
+        Component body = r.home(new Views.Home(clock(), date(), player.getName(), unread, 0), 0);
+        show(player, s, Screen.HOME, body, List.of(), grid, "ui.button.close", "close");
     }
 
     // ---- settings ---------------------------------------------------------------------------------------------------
@@ -360,12 +475,12 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         Session s = session(player);
         if (!unlocked(player, s)) return;
         ScreenRenderer r = renderer(player);
-        List<ActionButton> buttons = new ArrayList<>();
-        if (cfg.passcodeEnabled) buttons.add(button(lang.get("ui.button.change-passcode"), 150, "passcode"));
-        buttons.add(button(lang.get("ui.button.resend-pack"), 150, "repack"));
+        Grid grid = new Grid(r, 1);
+        if (cfg.passcodeEnabled) grid.add("lock", lang.plain("ui.button.change-passcode"), Views.Tone.NORMAL, "passcode");
+        grid.add(null, lang.plain("ui.button.resend-pack"), Views.Tone.NORMAL, "repack");
         String packLine = lang.plain(pack.hasPack(player) ? "ui.settings.pack-on" : "ui.settings.pack-off");
-        Component body = r.settings(new Views.Settings(clock(), player.getName(), packLine), below(0, 0, buttons.size(), 1));
-        show(player, s, Screen.SETTINGS, body, r.bodyWidth(), List.of(), buttons, 1, "ui.button.back", "home");
+        Component body = r.settings(new Views.Settings(clock(), player.getName(), packLine), 0);
+        show(player, s, Screen.SETTINGS, body, List.of(), grid, "ui.button.back", "home");
     }
 
     // ---- contacts ---------------------------------------------------------------------------------------------------
@@ -388,35 +503,38 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         });
     }
 
-    private void showContacts(Player player, Session s, int page, List<ContactRow> rows, Database.KnownPlayer found) {
+    /** Everyone to show in the contact list: conversations first, then who is online, then a search hit. */
+    private List<Views.Contact> contactList(Player player, List<ContactRow> rows, Database.KnownPlayer found, String filter) {
         UUID me = player.getUniqueId();
         Map<UUID, Views.Contact> all = new LinkedHashMap<>();
-        int totalUnread = 0;
-        // 1. people with a conversation, newest first
         for (ContactRow row : rows) {
             Player other = Bukkit.getPlayer(row.partner());
             boolean online = other != null && player.canSee(other);
-            totalUnread += row.unread();
             if (!online && !cfg.showOfflineContacts && row.unread() == 0) continue;
             String name = other != null ? other.getName() : row.name() != null ? row.name() : lang.plain("ui.contacts.unknown");
             all.put(row.partner(), new Views.Contact(row.partner(), name, online, row.lastBody(), row.lastFromMe(), stamp(row.lastTime()), row.unread()));
         }
-        // 2. everyone else who is online, by name
         List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
         online.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
         for (Player other : online) {
             if (other.getUniqueId().equals(me) || all.containsKey(other.getUniqueId()) || !player.canSee(other)) continue;
             all.put(other.getUniqueId(), new Views.Contact(other.getUniqueId(), other.getName(), true, "", false, "", 0));
         }
-        // 3. an offline player found by exact name through the search box
         if (found != null && !found.id().equals(me) && !all.containsKey(found.id())) {
             all.put(found.id(), new Views.Contact(found.id(), found.name(), false, "", false, "", 0));
         }
         List<Views.Contact> list = new ArrayList<>();
-        String needle = s.filter.toLowerCase(Locale.ROOT);
+        String needle = filter.toLowerCase(Locale.ROOT);
         for (Views.Contact c : all.values()) {
             if (needle.isEmpty() || c.name().toLowerCase(Locale.ROOT).contains(needle)) list.add(c);
         }
+        return list;
+    }
+
+    private void showContacts(Player player, Session s, int page, List<ContactRow> rows, Database.KnownPlayer found) {
+        int totalUnread = 0;
+        for (ContactRow row : rows) totalUnread += row.unread();
+        List<Views.Contact> list = contactList(player, rows, found, s.filter);
         int per = cfg.contactsPerPage;
         int pages = Math.max(1, (list.size() + per - 1) / per);
         int index = Math.floorMod(page, pages);
@@ -424,20 +542,16 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         s.contactsPage = index;
 
         ScreenRenderer r = renderer(player);
-        int w = r.rowButtonWidth();
-        List<ActionButton> buttons = new ArrayList<>();
+        Grid grid = new Grid(r, 1);
         for (Views.Contact c : shown) {
-            ActionButton.Builder b = ActionButton.builder(r.contactButton(c)).width(w)
-                    .action(DialogAction.customClick(Key.key(NAMESPACE, "conv/" + c.id() + "/0"), null));
-            if (!c.preview().isEmpty()) b.tooltip(Component.text(c.preview()));
-            buttons.add(b.build());
+            grid.add(first -> r.contactButton(c, first), "conv/" + c.id() + "/0", c.preview().isEmpty() ? null : c.preview());
         }
-        buttons.add(button(lang.get("ui.button.search"), w, "search"));
-        if (!s.filter.isEmpty()) buttons.add(button(lang.get("ui.button.clear-search"), w, "clearsearch"));
-        if (pages > 1) buttons.add(button(lang.get("ui.button.next-page"), w, "contacts/" + (index + 1)));
-        List<DialogInput> inputs = List.of(field("q", lang.get("ui.contacts.search-label"), true, Math.min(w, 200), s.filter, 16));
-        Component body = r.contacts(new Views.Contacts(clock(), shown, index, pages, s.filter, totalUnread), below(0, 1, buttons.size(), 1));
-        show(player, s, Screen.CONTACTS, body, r.bodyWidth(), inputs, buttons, 1, "ui.button.back", "home");
+        grid.add("search", lang.plain("ui.button.search"), Views.Tone.NORMAL, "search");
+        if (!s.filter.isEmpty()) grid.add(null, lang.plain("ui.button.clear-search"), Views.Tone.DIM, "clearsearch");
+        if (pages > 1) grid.add("right", lang.plain("ui.button.next-page"), Views.Tone.DIM, "contacts/" + (index + 1));
+        List<DialogInput> inputs = List.of(field("q", lang.get("ui.contacts.search-label"), true, r.buttonWidth(1), s.filter, 16));
+        Component body = r.contacts(new Views.Contacts(clock(), shown, index, pages, s.filter, totalUnread), inputs(0, 1));
+        show(player, s, Screen.CONTACTS, body, inputs, grid, "ui.button.back", "home");
     }
 
     // ---- conversation -----------------------------------------------------------------------------------------------
@@ -488,22 +602,21 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         String notice = s.notice;
         s.notice = "";
 
-        List<ActionButton> buttons = new ArrayList<>();
-        int w = 70;
-        buttons.add(button(lang.get("ui.button.send"), w, "send/" + partner));
-        buttons.add(button(lang.get("ui.button.refresh"), w, "refresh/" + partner));
-        if (cfg.allowEdit || cfg.allowDelete) buttons.add(button(lang.get("ui.button.edit"), w, "mine/" + partner));
+        Grid grid = new Grid(r, 3);
+        grid.add(null, lang.plain("ui.button.send"), Views.Tone.ACCENT, "send/" + partner);
+        grid.add(null, lang.plain("ui.button.refresh"), Views.Tone.NORMAL, "refresh/" + partner);
+        if (cfg.allowEdit || cfg.allowDelete) grid.add("pencil", lang.plain("ui.button.edit"), Views.Tone.NORMAL, "mine/" + partner);
         // scrolling: the window moves scroll-step messages at a time
-        if (page.hasOlder()) buttons.add(button(lang.get("ui.button.older"), w, "conv/" + partner + "/" + (s.skip + cfg.scrollStep)));
-        if (page.hasNewer()) buttons.add(button(lang.get("ui.button.newer"), w, "conv/" + partner + "/" + Math.max(0, s.skip - cfg.scrollStep)));
-        buttons.add(button(lang.get(blocked ? "ui.button.unblock" : "ui.button.block"), w, "block/" + partner));
-        List<DialogInput> inputs = List.of(field("msg", lang.get("ui.conversation.input-label"), false, 200,
+        if (page.hasOlder()) grid.add("up", lang.plain("ui.button.older"), Views.Tone.DIM, "conv/" + partner + "/" + (s.skip + cfg.scrollStep));
+        if (page.hasNewer()) grid.add("down", lang.plain("ui.button.newer"), Views.Tone.DIM, "conv/" + partner + "/" + Math.max(0, s.skip - cfg.scrollStep));
+        grid.add(null, lang.plain(blocked ? "ui.button.unblock" : "ui.button.block"), Views.Tone.DANGER, "block/" + partner);
+        List<DialogInput> inputs = List.of(field("msg", lang.get("ui.conversation.input-label"), false, r.buttonWidth(1),
                 s.drafts.getOrDefault(partner, ""), cfg.maxLength));
 
         Views.Conversation view = new Views.Conversation(clock(), partner, s.partnerName, online, bubbles, page.hasOlder(),
                 page.hasNewer(), blocked, notice);
-        Component body = r.conversation(view, below(1, 0, buttons.size(), 3));
-        show(player, s, Screen.CONVERSATION, body, r.bodyWidth(), inputs, buttons, 3, "ui.button.back", "contacts/" + s.contactsPage);
+        Component body = r.conversation(view, inputs(1, 0));
+        show(player, s, Screen.CONVERSATION, body, inputs, grid, "ui.button.back", "contacts/" + s.contactsPage);
     }
 
     /** Remembers what is in the text field; called for every button of the conversation screen. */
@@ -546,18 +659,16 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             if (!player.isOnline()) return;
             String notice = s.notice;
             s.notice = "";
-            int w = r.rowButtonWidth();
-            List<ActionButton> buttons = new ArrayList<>();
+            Grid grid = new Grid(r, 1);
             int offered = 0;
             for (Message m : list) {
                 if (messages.mayChange(player, m, !cfg.allowEdit) != MessageService.SendResult.OK) continue;
-                buttons.add(button(r.ownMessageButton(bubble(player.getUniqueId(), m)), w, "editmsg/" + partner + "/" + m.id()));
+                Views.Bubble b = bubble(player.getUniqueId(), m);
+                grid.add(first -> r.ownMessageButton(b, first), "editmsg/" + partner + "/" + m.id(), null);
                 offered++;
             }
-            // a multi-action dialog needs at least one button
-            if (buttons.isEmpty()) buttons.add(button(lang.get("ui.button.back"), w, "conv/" + partner + "/" + s.skip));
-            Component body = r.ownMessages(new Views.OwnMessages(clock(), s.partnerName, offered, notice), below(0, 0, buttons.size(), 1));
-            show(player, s, Screen.OWN_MESSAGES, body, r.bodyWidth(), List.of(), buttons, 1, "ui.button.back", "conv/" + partner + "/" + s.skip);
+            Component body = r.ownMessages(new Views.OwnMessages(clock(), s.partnerName, offered, notice), 0);
+            show(player, s, Screen.OWN_MESSAGES, body, List.of(), grid, "ui.button.back", "conv/" + partner + "/" + s.skip);
         });
     }
 
@@ -573,17 +684,16 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             }
             String notice = s.notice;
             s.notice = "";
-            List<ActionButton> buttons = new ArrayList<>();
+            Grid grid = new Grid(r, 2);
             List<DialogInput> inputs = new ArrayList<>();
             if (cfg.allowEdit) {
-                inputs.add(field("edit", lang.get("ui.conversation.input-label"), false, 200, m.body(), cfg.maxLength));
-                buttons.add(button(lang.get("ui.button.save"), 100, "save/" + partner + "/" + id));
+                inputs.add(field("edit", lang.get("ui.conversation.input-label"), false, r.buttonWidth(1), m.body(), cfg.maxLength));
+                grid.add(null, lang.plain("ui.button.save"), Views.Tone.ACCENT, "save/" + partner + "/" + id);
             }
-            if (cfg.allowDelete) buttons.add(button(lang.get("ui.button.delete"), 100, "del/" + partner + "/" + id));
-            if (buttons.isEmpty()) buttons.add(button(lang.get("ui.button.back"), 100, "mine/" + partner));
+            if (cfg.allowDelete) grid.add("trash", lang.plain("ui.button.delete"), Views.Tone.DANGER, "del/" + partner + "/" + id);
             Views.EditMessage view = new Views.EditMessage(clock(), s.partnerName, bubble(player.getUniqueId(), m), notice);
-            Component body = r.editMessage(view, below(inputs.size(), 0, buttons.size(), 2));
-            show(player, s, Screen.EDIT_MESSAGE, body, r.bodyWidth(), inputs, buttons, 2, "ui.button.back", "mine/" + partner);
+            Component body = r.editMessage(view, inputs(inputs.size(), 0));
+            show(player, s, Screen.EDIT_MESSAGE, body, inputs, grid, "ui.button.back", "mine/" + partner);
         });
     }
 
@@ -613,17 +723,554 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         });
     }
 
-    // ---- camera -----------------------------------------------------------------------------------------------------
+    // ---- Photos -----------------------------------------------------------------------------------------------------
 
+    /** The picture taken a moment ago: the Photos app opens on it, Back returns to the viewfinder. */
     @Override
-    public void show(Player player, int zoom, String location, double videoSeconds) {
+    public void developed(Player player, long galleryId) {
         Session s = session(player);
+        s.fromCamera = true;
+        openPhotos(player, 0);
+    }
+
+    public void openPhotos(Player player, int index) {
+        if (!mayUse(player)) return;
+        Session s = session(player);
+        if (!unlocked(player, s)) return;
         ScreenRenderer r = renderer(player);
-        List<ActionButton> buttons = List.of(
-                button(lang.get(videoSeconds > 0 ? "ui.button.save-video" : "ui.button.print"), 106, "print"),
-                button(lang.get("ui.button.retake"), 106, "retake"));
-        Component body = r.photoResult(new Views.PhotoResult(clock(), zoom, location, videoSeconds), below(0, 0, 2, 2));
-        show(player, s, Screen.PHOTO, body, r.bodyWidth(), List.of(), buttons, 2, "ui.button.close", "camclose");
+        Tasks.onMain(plugin, gallery.list(player.getUniqueId()), list -> {
+            if (!player.isOnline()) return;
+            if (list.isEmpty()) {
+                showPhotos(player, s, r, list, 0, null);
+                return;
+            }
+            int at = Math.floorMod(index, list.size());
+            Tasks.onMain(plugin, gallery.media(list.get(at).id()), media -> {
+                if (player.isOnline()) showPhotos(player, s, r, list, at, media);
+            });
+        });
+    }
+
+    private String photoInfo(Database.GalleryItem item, MediaStore.Media media) {
+        String when = stamp(item.takenAt());
+        String what = item.video() ? lang.plain("ui.photos.video", "seconds", String.format(Locale.ROOT, "%.1f", item.frames() / (double) item.fps())) : "";
+        String from = item.fromName() == null ? "" : lang.plain("ui.photos.from", "player", item.fromName());
+        StringBuilder sb = new StringBuilder(when);
+        if (!what.isEmpty()) sb.append("  ").append(what);
+        if (!from.isEmpty()) sb.append("  ").append(from);
+        return sb.toString();
+    }
+
+    private void showPhotos(Player player, Session s, ScreenRenderer r, List<Database.GalleryItem> list, int at, MediaStore.Media media) {
+        s.photoIndex = at;
+        String notice = s.notice;
+        s.notice = "";
+        Database.GalleryItem item = list.isEmpty() ? null : list.get(at);
+        boolean video = item != null && item.video();
+        Grid grid = new Grid(r, 3);
+        if (item != null) {
+            boolean many = list.size() > 1;
+            grid.add(null, lang.plain("ui.button.prev"), many ? Views.Tone.NORMAL : Views.Tone.DIM, many ? "photos/" + (at - 1) : "nop");
+            if (video && media != null) grid.add("play", lang.plain("ui.button.play"), Views.Tone.NORMAL, "photoplay/" + at);
+            else grid.add(null, (at + 1) + "/" + list.size(), Views.Tone.DIM, "nop");
+            grid.add(null, lang.plain("ui.button.next"), many ? Views.Tone.NORMAL : Views.Tone.DIM, many ? "photos/" + (at + 1) : "nop");
+            grid.add(null, lang.plain(video ? "ui.button.keep" : "ui.button.print"), Views.Tone.PRINT, "photoprint/" + item.id());
+            grid.add(null, lang.plain("ui.button.share"), Views.Tone.ACCENT, "photoshare/" + item.id());
+            boolean confirm = s.confirmDelete == item.id();
+            grid.add(null, lang.plain(confirm ? "ui.button.confirm-delete" : "ui.button.delete"), Views.Tone.DANGER, "photodel/" + item.id());
+        } else if (cfg.cameraEnabled && player.hasPermission("phone.camera")) {
+            grid.add("camera", lang.plain("ui.button.camera"), Views.Tone.NORMAL, "camera");
+        }
+        if (item == null || s.confirmDelete != item.id()) s.confirmDelete = -1;
+        int[] photo = media == null ? null : media.poster();
+        if (item != null && media == null) notice = lang.plain("ui.photos.missing");
+        String info = item == null ? "" : photoInfo(item, media);
+        Component body = r.photos(new Views.Photos(clock(), photo, video, at, list.size(), info, notice), 0);
+        boolean back = s.fromCamera && camera.isActive(player);
+        show(player, s, Screen.PHOTOS, body, List.of(), grid, back ? "ui.button.camera" : "ui.button.back", back ? "camback" : "home");
+    }
+
+    /** Plays a video inside the Photos screen: the screen is sent again for every frame, once through. */
+    private void playPhoto(Player player, Session s, int index) {
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, gallery.list(player.getUniqueId()), list -> {
+            if (!player.isOnline() || list.isEmpty()) return;
+            int at = Math.floorMod(index, list.size());
+            Database.GalleryItem item = list.get(at);
+            Tasks.onMain(plugin, gallery.media(item.id()), media -> {
+                if (!player.isOnline() || media == null) return;
+                String info = photoInfo(item, media);
+                Grid grid = new Grid(r, 3);
+                grid.add(null, lang.plain("ui.button.prev"), Views.Tone.DIM, "photos/" + (at - 1));
+                grid.add(null, lang.plain("ui.button.stop"), Views.Tone.NORMAL, "photos/" + at);
+                grid.add(null, lang.plain("ui.button.next"), Views.Tone.DIM, "photos/" + (at + 1));
+                grid.add(null, lang.plain("ui.button.keep"), Views.Tone.PRINT, "photoprint/" + item.id());
+                grid.add(null, lang.plain("ui.button.share"), Views.Tone.ACCENT, "photoshare/" + item.id());
+                grid.add(null, lang.plain("ui.button.delete"), Views.Tone.DANGER, "photodel/" + item.id());
+                List<ActionButton> buttons = grid.finish();
+                boolean back = s.fromCamera && camera.isActive(player);
+                play(player, s, media, frame -> r.photos(new Views.Photos(clock(), frame, true, at, list.size(), info, ""), 0),
+                        body -> showFrame(player, s, Screen.PHOTOS, body, List.of(), buttons, back ? "ui.button.camera" : "ui.button.back",
+                                back ? "camback" : "home", r));
+            });
+        });
+    }
+
+    /**
+     * Sends one dialog per frame of {@code media} at {@code photos.playback-fps}, ending on the first frame. Any other
+     * screen stops it.
+     */
+    private void play(Player player, Session s, MediaStore.Media media, java.util.function.Function<int[], Component> render,
+                      java.util.function.Consumer<Component> send) {
+        stopPlayback(s);
+        int frames = media.frames().size();
+        int step = Math.max(1, Math.round(media.frames().size() / (float) (media.seconds() * cfg.playbackFps)));
+        int interval = Math.max(1, 20 / cfg.playbackFps);
+        int[] at = {0};
+        s.playback = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline()) {
+                stopPlayback(s);
+                return;
+            }
+            int i = at[0];
+            boolean last = i >= frames;
+            send.accept(render.apply(media.frames().get(last ? 0 : i)));
+            at[0] = i + step;
+            if (last) stopPlayback(s);
+        }, 0L, interval);
+    }
+
+    private void printPhoto(Player player, Session s, long id) {
+        Tasks.onMain(plugin, gallery.item(id), item -> {
+            if (!player.isOnline() || item == null || !item.owner().equals(player.getUniqueId())) return;
+            Tasks.onMain(plugin, gallery.media(id), media -> {
+                if (!player.isOnline()) return;
+                if (media == null) {
+                    s.notice = lang.plain("ui.photos.missing");
+                } else {
+                    World world = item.world() == null ? null : Bukkit.getWorld(item.world());
+                    Location where = world == null ? player.getLocation() : new Location(world, item.x(), item.y(), item.z());
+                    if (camera.printMedia(player, media.frames(), media.fps(), item.takenAt(), where)) {
+                        s.notice = lang.plain(media.video() ? "ui.photos.video-saved" : "ui.photos.printed");
+                    }
+                }
+                openPhotos(player, s.photoIndex);
+            });
+        });
+    }
+
+    private void deletePhoto(Player player, Session s, long id) {
+        if (s.confirmDelete != id) {
+            s.confirmDelete = id;
+            s.notice = lang.plain("ui.photos.confirm-delete");
+            openPhotos(player, s.photoIndex);
+            return;
+        }
+        s.confirmDelete = -1;
+        Tasks.onMain(plugin, gallery.delete(id, player.getUniqueId()), gone -> {
+            if (!player.isOnline()) return;
+            s.notice = lang.plain(gone ? "ui.photos.deleted" : "ui.photos.missing");
+            openPhotos(player, s.photoIndex);
+        });
+    }
+
+    // ---- sharing a picture ------------------------------------------------------------------------------------------
+
+    private void openShare(Player player, Session s, long id) {
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, db.contacts(player.getUniqueId()), rows -> {
+            if (!player.isOnline()) return;
+            Grid grid = new Grid(r, 1);
+            if (gram.mayUse(player)) grid.add("plus", lang.plain("ui.share.gram"), Views.Tone.ACCENT, "sharegram/" + id);
+            if (player.hasPermission("phone.message")) {
+                int n = 0;
+                for (Views.Contact c : contactList(player, rows, null, "")) {
+                    if (n++ >= 5) break;
+                    grid.add(first -> r.contactButton(new Views.Contact(c.id(), c.name(), c.online(), "", false, "", 0), first),
+                            "sendphoto/" + id + "/" + c.id(), lang.plain("ui.share.send-to", "player", c.name()));
+                }
+            }
+            String notice = s.notice;
+            s.notice = "";
+            show(player, s, Screen.SHARE, r.share(new Views.Share(clock(), notice), 0), List.of(), grid, "ui.button.back",
+                    "photos/" + s.photoIndex);
+        });
+    }
+
+    /** Sends a picture to another player: a copy goes into their Photos and a message tells them. */
+    private void sendPhoto(Player player, Session s, long id, UUID to) {
+        if (s.sending) return;
+        s.sending = true;
+        Tasks.onMain(plugin, db.playerName(to), name -> {
+            String toName = name == null ? lang.plain("ui.contacts.unknown") : name;
+            messages.send(player, to, toName, lang.plain("ui.share.message"), result -> {
+                if (result != MessageService.SendResult.OK) {
+                    s.sending = false;
+                    s.notice = error(result);
+                    openShare(player, s, id);
+                    return;
+                }
+                Tasks.onMain(plugin, gallery.sendCopy(id, to, player.getName()), copy -> {
+                    s.sending = false;
+                    if (!player.isOnline()) return;
+                    s.notice = copy >= 0 ? lang.plain("ui.share.sent", "player", toName)
+                            : copy == -1 ? lang.plain("ui.share.full", "player", toName) : lang.plain("ui.photos.missing");
+                    openPhotos(player, s.photoIndex);
+                });
+            });
+        });
+    }
+
+    // ---- Minestagram ------------------------------------------------------------------------------------------------
+
+    private String gramError(Gram.Result result) {
+        return lang.plain("ui.gram.error." + result.name().toLowerCase(Locale.ROOT).replace('_', '-'),
+                "max", cfg.gramCaptionLength, "seconds", cfg.gramPostCooldownSeconds);
+    }
+
+    /** Opens Minestagram: the account set-up the first time, else the feed. */
+    public void openGram(Player player) {
+        if (!mayUse(player)) return;
+        if (camera.isActive(player)) camera.exit(player);
+        Session s = session(player);
+        if (!unlocked(player, s)) return;
+        if (!gram.mayUse(player)) {
+            player.sendMessage(lang.get("error.no-permission"));
+            return;
+        }
+        Tasks.onMain(plugin, gram.account(player.getUniqueId()), acct -> {
+            if (!player.isOnline()) return;
+            if (acct == null) openAccount(player, s, true, Gram.suggestHandle(player.getName()), "");
+            else openFeed(player, s, null, 0);
+        });
+    }
+
+    private void openAccount(Player player, Session s, boolean create, String handle, String bio) {
+        ScreenRenderer r = renderer(player);
+        String notice = s.notice;
+        s.notice = "";
+        int w = r.buttonWidth(1);
+        List<DialogInput> inputs = List.of(field("handle", lang.get("ui.gram.handle-label"), true, w, handle, 16),
+                field("bio", lang.get("ui.gram.bio-label"), true, w, bio, cfg.gramBioLength));
+        Grid grid = new Grid(r, 1).add(null, lang.plain(create ? "ui.button.create" : "ui.button.save"), Views.Tone.ACCENT, "gramsave/" + create);
+        Component body = r.account(new Views.Account(clock(), create, notice), inputs(0, 2));
+        show(player, s, Screen.GRAM_ACCOUNT, body, inputs, grid, "ui.button.back", create ? "home" : "gramme");
+    }
+
+    private void saveAccount(Player player, Session s, boolean create, DialogResponseView view) {
+        String handle = view == null ? "" : view.getText("handle");
+        String bio = view == null ? "" : view.getText("bio");
+        gram.saveAccount(player, handle, bio, result -> {
+            if (!player.isOnline()) return;
+            if (result == Gram.Result.OK) {
+                openFeed(player, s, create ? null : player.getUniqueId(), 0);
+            } else {
+                s.notice = gramError(result);
+                openAccount(player, s, create, handle == null ? "" : handle, bio == null ? "" : bio);
+            }
+        });
+    }
+
+    /**
+     * The feed ({@code profile} null) or one account's page, at entry {@code index}. The account's own header comes
+     * from the database too.
+     */
+    private void openFeed(Player player, Session s, UUID profile, int index) {
+        ScreenRenderer r = renderer(player);
+        UUID me = player.getUniqueId();
+        CompletableFuture<Database.GramAccount> acct = profile == null ? CompletableFuture.completedFuture(null) : gram.account(profile);
+        Tasks.onMain(plugin, db.gramFeed(me, profile, index).thenCombine(acct, java.util.AbstractMap.SimpleImmutableEntry::new), result -> {
+            if (!player.isOnline()) return;
+            Database.GramPage page = result.getKey();
+            Database.GramPost post = page.post();
+            if (post == null) {
+                showFeed(player, s, r, profile, result.getValue(), page, null);
+                return;
+            }
+            Tasks.onMain(plugin, gram.media().read(post.id()), media -> {
+                if (player.isOnline()) showFeed(player, s, r, profile, result.getValue(), page, media);
+            });
+        });
+    }
+
+    private Views.Post postView(Database.GramPost p, int[] photo) {
+        return new Views.Post(p.author(), p.handle(), age(p.createdAt()), p.caption(), photo, p.frames() > 1, p.likes(), p.comments(),
+                p.reposts(), p.liked(), p.reposted(), p.reposter());
+    }
+
+    private static String count(int n) {
+        return n > 99 ? "99+" : String.valueOf(n);
+    }
+
+    private void showFeed(Player player, Session s, ScreenRenderer r, UUID profile, Database.GramAccount acct, Database.GramPage page,
+                          MediaStore.Media media) {
+        UUID me = player.getUniqueId();
+        s.gramProfile = profile;
+        s.gramIndex = page.index();
+        s.gramPost = page.post();
+        String notice = s.notice;
+        s.notice = "";
+        Database.GramPost post = page.post();
+        String where = profile == null ? "gramf/" : "gramp/" + profile + "/";
+        Grid grid = new Grid(r, 5);
+        boolean many = page.total() > 1;
+        if (post != null) {
+            boolean own = post.author().equals(me);
+            grid.add("left", "", many && page.index() > 0 ? Views.Tone.NORMAL : Views.Tone.DIM, many ? where + (page.index() - 1) : "nop");
+            grid.add(new Views.Btn(post.liked() ? "heart_full" : "heart", count(post.likes()), post.liked() ? Views.Tone.ACTIVE : Views.Tone.NORMAL,
+                    "gramlike", lang.plain(post.liked() ? "ui.gram.unlike" : "ui.gram.like")));
+            grid.add(new Views.Btn("comment", count(post.comments()), Views.Tone.NORMAL, "gramcom/0", lang.plain("ui.gram.comments")));
+            if (own || (gram.moderator(player) && s.confirmPostDelete == post.entryId())) {
+                boolean confirm = s.confirmPostDelete == post.entryId();
+                grid.add(new Views.Btn("trash", confirm ? "?" : "", Views.Tone.DANGER, "gramdel",
+                        lang.plain(confirm ? "ui.gram.confirm-delete" : "ui.gram.delete")));
+            } else {
+                grid.add(new Views.Btn("repost", count(post.reposts()), post.reposted() ? Views.Tone.ACCENT : Views.Tone.NORMAL, "gramrp",
+                        lang.plain(post.reposted() ? "ui.gram.unrepost" : "ui.gram.repost")));
+            }
+            grid.add("right", "", many && page.index() < page.total() - 1 ? Views.Tone.NORMAL : Views.Tone.DIM,
+                    many ? where + (page.index() + 1) : "nop");
+            if (s.confirmPostDelete != post.entryId()) s.confirmPostDelete = -1;
+        }
+        boolean ownProfile = profile != null && profile.equals(me);
+        grid.add(new Views.Btn("home", "", profile == null ? Views.Tone.NORMAL : Views.Tone.DIM, "gramf/0", lang.plain("ui.gram.feed")));
+        grid.add(new Views.Btn("search", "", Views.Tone.DIM, "gramsearch", lang.plain("ui.gram.search")));
+        grid.add(new Views.Btn("plus", "", Views.Tone.DIM, "gramnew/0", lang.plain("ui.gram.new-post")));
+        grid.add(new Views.Btn("heart", "", Views.Tone.DIM, "gramact", lang.plain("ui.gram.activity")));
+        grid.add(new Views.Btn("profile", "", ownProfile ? Views.Tone.NORMAL : Views.Tone.DIM, "gramme",
+                lang.plain(ownProfile ? "ui.gram.edit" : "ui.gram.profile")));
+        Views.Profile header = profile == null ? null
+                : new Views.Profile(profile, acct == null ? "?" : acct.handle(), acct == null ? "" : acct.bio(), acct == null ? 0 : acct.posts(), ownProfile);
+        int[] photo = media == null ? null : media.poster();
+        Views.Feed view = new Views.Feed(clock(), post == null ? null : postView(post, photo), page.index(), page.total(), header, notice);
+        Component body = r.feed(view, 0);
+        String exit = profile == null ? "home" : "gramf/0";
+        s.gramBack = () -> openFeed(player, s, profile, page.index());
+        show(player, s, Screen.GRAM_FEED, body, List.of(), grid, "ui.button.back", exit);
+        // a video plays once when it comes up
+        if (post != null && media != null && media.video() && cfg.gramAutoplay) {
+            List<ActionButton> buttons = new ArrayList<>(grid.out);
+            play(player, s, media, frame -> r.feed(new Views.Feed(clock(), postView(post, frame), page.index(), page.total(), header, ""), 0),
+                    frame -> showFrame(player, s, Screen.GRAM_FEED, frame, List.of(), buttons, "ui.button.back", exit, r));
+        }
+    }
+
+    /** Runs {@code action} on the post on screen, then shows the same screen again. */
+    private void onPost(Player player, Session s, java.util.function.BiConsumer<Database.GramPost, java.util.function.Consumer<Gram.Result>> action) {
+        Database.GramPost post = s.gramPost;
+        if (post == null) {
+            reopenGram(player, s);
+            return;
+        }
+        action.accept(post, result -> {
+            if (!player.isOnline()) return;
+            if (result != Gram.Result.OK) s.notice = gramError(result);
+            reopenGram(player, s);
+        });
+    }
+
+    private void reopenGram(Player player, Session s) {
+        if (s.gramBack != null) s.gramBack.run();
+        else openFeed(player, s, null, 0);
+    }
+
+    private void deletePost(Player player, Session s) {
+        Database.GramPost post = s.gramPost;
+        if (post == null) return;
+        if (s.confirmPostDelete != post.entryId()) {
+            s.confirmPostDelete = post.entryId();
+            s.notice = lang.plain("ui.gram.confirm-delete");
+            reopenGram(player, s);
+            return;
+        }
+        s.confirmPostDelete = -1;
+        gram.delete(player, post.id(), result -> {
+            if (!player.isOnline()) return;
+            s.notice = result == Gram.Result.OK ? lang.plain("ui.gram.deleted") : gramError(result);
+            openFeed(player, s, s.gramProfile, s.gramIndex);
+        });
+    }
+
+    private void openComments(Player player, Session s, int skip) {
+        Database.GramPost post = s.gramPost;
+        if (post == null) {
+            reopenGram(player, s);
+            return;
+        }
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, db.gramComments(post.id(), Math.max(0, skip), COMMENTS_PER_PAGE + 1), list -> {
+            if (!player.isOnline()) return;
+            s.commentsSkip = Math.max(0, skip);
+            boolean older = list.size() > COMMENTS_PER_PAGE;
+            List<Database.GramComment> page = new ArrayList<>(list.subList(0, Math.min(COMMENTS_PER_PAGE, list.size())));
+            java.util.Collections.reverse(page);        // oldest of the page on top, like a chat
+            List<Views.Comment> shown = new ArrayList<>();
+            for (Database.GramComment c : page) shown.add(new Views.Comment(c.handle(), c.body(), age(c.at())));
+            String notice = s.notice;
+            s.notice = "";
+            Grid grid = new Grid(r, 3);
+            grid.add(null, lang.plain("ui.button.post-comment"), Views.Tone.ACCENT, "gramsay");
+            grid.add("up", lang.plain("ui.button.earlier"), older ? Views.Tone.NORMAL : Views.Tone.DIM, older ? "gramcom/" + (s.commentsSkip + COMMENTS_PER_PAGE) : "nop");
+            boolean newer = s.commentsSkip > 0;
+            grid.add("down", lang.plain("ui.button.later"), newer ? Views.Tone.NORMAL : Views.Tone.DIM,
+                    newer ? "gramcom/" + Math.max(0, s.commentsSkip - COMMENTS_PER_PAGE) : "nop");
+            boolean canDelete = post.author().equals(player.getUniqueId()) || gram.moderator(player);
+            for (Database.GramComment c : page) canDelete |= c.author().equals(player.getUniqueId());
+            if (canDelete && !page.isEmpty()) grid.add("trash", lang.plain("ui.button.delete"), Views.Tone.DANGER, "gramdelc");
+            List<DialogInput> inputs = List.of(field("comment", lang.get("ui.gram.comment-label"), false, r.buttonWidth(1), s.commentDraft,
+                    cfg.gramCommentLength));
+            Views.Comments view = new Views.Comments(clock(), post.handle(), post.caption(), shown, older, newer, notice);
+            show(player, s, Screen.GRAM_COMMENTS, r.comments(view, inputs(1, 0)), inputs, grid, "ui.button.back", "gramback");
+        });
+    }
+
+    private void sayComment(Player player, Session s, DialogResponseView view) {
+        Database.GramPost post = s.gramPost;
+        String typed = view == null ? "" : view.getText("comment");
+        if (post == null || s.sending) return;
+        s.sending = true;
+        gram.comment(player, post, typed, result -> {
+            s.sending = false;
+            if (!player.isOnline()) return;
+            if (result == Gram.Result.OK) {
+                s.commentDraft = "";
+                sounds.play(player, Sounds.Cue.SEND);
+            } else {
+                s.commentDraft = typed == null ? "" : typed;
+                s.notice = gramError(result);
+            }
+            openComments(player, s, 0);
+        });
+    }
+
+    /** The comments on this page that the player may delete, one button each. */
+    private void openDeleteComment(Player player, Session s) {
+        Database.GramPost post = s.gramPost;
+        if (post == null) return;
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, db.gramComments(post.id(), s.commentsSkip, COMMENTS_PER_PAGE), list -> {
+            if (!player.isOnline()) return;
+            boolean all = post.author().equals(player.getUniqueId()) || gram.moderator(player);
+            Grid grid = new Grid(r, 1);
+            for (Database.GramComment c : list) {
+                if (!all && !c.author().equals(player.getUniqueId())) continue;
+                grid.add(first -> r.activityButton(c.author(), "trash", c.handle() + ": " + c.body(), age(c.at()), first),
+                        "gramdelcid/" + c.id(), c.body());
+            }
+            Views.Comments view = new Views.Comments(clock(), post.handle(), post.caption(), List.of(), false, false,
+                    lang.plain("ui.gram.pick-delete"));
+            show(player, s, Screen.GRAM_DELETE, r.comments(view, 0), List.of(), grid, "ui.button.back", "gramcom/" + s.commentsSkip);
+        });
+    }
+
+    private void openCompose(Player player, Session s, int index, DialogResponseView view) {
+        if (view != null && s.screen == Screen.GRAM_COMPOSE) {
+            String typed = view.getText("caption");
+            s.captionDraft = typed == null ? "" : typed;
+        }
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, gallery.list(player.getUniqueId()), list -> {
+            if (!player.isOnline()) return;
+            int at = list.isEmpty() ? 0 : Math.floorMod(index, list.size());
+            CompletableFuture<MediaStore.Media> media = list.isEmpty() ? CompletableFuture.completedFuture(null) : gallery.media(list.get(at).id());
+            Tasks.onMain(plugin, media, m -> {
+                if (!player.isOnline()) return;
+                s.composeIndex = at;
+                String notice = s.notice;
+                s.notice = "";
+                Grid grid = new Grid(r, 3);
+                List<DialogInput> inputs = new ArrayList<>();
+                if (!list.isEmpty()) {
+                    boolean many = list.size() > 1;
+                    grid.add(null, lang.plain("ui.button.prev"), many ? Views.Tone.NORMAL : Views.Tone.DIM, many ? "gramnew/" + (at - 1) : "nop");
+                    grid.add(null, lang.plain("ui.button.publish"), Views.Tone.ACCENT, "grampost/" + list.get(at).id());
+                    grid.add(null, lang.plain("ui.button.next"), many ? Views.Tone.NORMAL : Views.Tone.DIM, many ? "gramnew/" + (at + 1) : "nop");
+                    inputs.add(field("caption", lang.get("ui.gram.caption-label"), true, r.buttonWidth(1), s.captionDraft, cfg.gramCaptionLength));
+                } else if (cfg.cameraEnabled && player.hasPermission("phone.camera")) {
+                    grid.add("camera", lang.plain("ui.button.camera"), Views.Tone.NORMAL, "camera");
+                }
+                boolean video = !list.isEmpty() && list.get(at).video();
+                Views.Compose cv = new Views.Compose(clock(), m == null ? null : m.poster(), video, at, list.size(), notice);
+                show(player, s, Screen.GRAM_COMPOSE, r.compose(cv, inputs(0, inputs.size())), inputs, grid, "ui.button.back", "gramback");
+            });
+        });
+    }
+
+    private void publish(Player player, Session s, long galleryId, DialogResponseView view) {
+        String caption = view == null ? "" : view.getText("caption");
+        if (s.sending) return;
+        s.sending = true;
+        s.captionDraft = caption == null ? "" : caption;
+        gram.post(player, galleryId, caption, result -> {
+            s.sending = false;
+            if (!player.isOnline()) return;
+            s.notice = result == Gram.Result.RATE_LIMITED ? lang.plain("ui.gram.error.wait", "seconds", gram.postWait(player)) : gramError(result);
+            if (result == Gram.Result.NO_ACCOUNT) openGram(player);
+            else openCompose(player, s, s.composeIndex, null);
+        }, id -> {
+            s.sending = false;
+            if (!player.isOnline()) return;
+            s.captionDraft = "";
+            sounds.play(player, Sounds.Cue.SEND);
+            s.notice = lang.plain("ui.gram.posted");
+            openFeed(player, s, null, 0);
+        });
+    }
+
+    private void openSearch(Player player, Session s, DialogResponseView view) {
+        if (view != null && s.screen == Screen.GRAM_SEARCH) s.gramQuery = TextWrapper.sanitize(view.getText("q"), 16).replace("@", "");
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, db.searchGram(s.gramQuery, 6), list -> {
+            if (!player.isOnline()) return;
+            Grid grid = new Grid(r, 1);
+            for (Database.GramAccount a : list) {
+                grid.add(first -> r.accountButton(a.id(), a.handle(), a.posts(), first), "gramp/" + a.id() + "/0", a.bio().isEmpty() ? null : a.bio());
+            }
+            grid.add("search", lang.plain("ui.button.search"), Views.Tone.ACCENT, "gramsearch");
+            List<DialogInput> inputs = List.of(field("q", lang.get("ui.gram.search-label"), true, r.buttonWidth(1), s.gramQuery, 16));
+            String notice = s.notice;
+            s.notice = "";
+            show(player, s, Screen.GRAM_SEARCH, r.search(new Views.Search(clock(), s.gramQuery, list.size(), notice), inputs(0, 1)), inputs,
+                    grid, "ui.button.back", "gramback");
+        });
+    }
+
+    private void openActivity(Player player, Session s) {
+        ScreenRenderer r = renderer(player);
+        Tasks.onMain(plugin, db.gramActivity(player.getUniqueId(), 6), list -> {
+            if (!player.isOnline()) return;
+            Grid grid = new Grid(r, 1);
+            for (Database.GramActivity a : list) {
+                String icon = switch (a.kind()) {
+                    case "like" -> "heart_full";
+                    case "comment" -> "comment";
+                    default -> "repost";
+                };
+                String text = lang.plain("ui.gram.did-" + a.kind(), "player", a.handle(), "text", a.text());
+                grid.add(first -> r.activityButton(a.who(), icon, text, age(a.at()), first), "grampost-open/" + a.postId(),
+                        a.text().isEmpty() ? null : a.text());
+            }
+            show(player, s, Screen.GRAM_ACTIVITY, r.activity(new Views.Activity(clock(), list.size()), 0), List.of(), grid, "ui.button.back",
+                    "gramback");
+        });
+    }
+
+    /** Opens one post by id (from the activity list) as a page of its author's profile. */
+    private void openPost(Player player, Session s, long postId) {
+        Tasks.onMain(plugin, db.gramPost(player.getUniqueId(), postId), post -> {
+            if (!player.isOnline()) return;
+            if (post == null) {
+                s.notice = lang.plain("ui.gram.error.not-found");
+                openActivity(player, s);
+                return;
+            }
+            ScreenRenderer r = renderer(player);
+            Tasks.onMain(plugin, gram.account(post.author()).thenCombine(gram.media().read(post.id()), java.util.AbstractMap.SimpleImmutableEntry::new), both -> {
+                if (!player.isOnline()) return;
+                showFeed(player, s, r, post.author(), both.getKey(), new Database.GramPage(post, 0, 1), both.getValue());
+                s.gramBack = () -> openPost(player, s, postId);
+            });
+        });
     }
 
     // ---- clicks -----------------------------------------------------------------------------------------------------
@@ -645,8 +1292,21 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         }
     }
 
+    /**
+     * Runs a button path as if the player had clicked it, without input values (/phone click: command blocks,
+     * scripts and testing without a mouse).
+     */
+    public void click(Player player, String path) {
+        try {
+            route(player, session(player), path.split("/"), null);
+        } catch (IllegalArgumentException | ArrayIndexOutOfBoundsException ex) {
+            close(player, true);
+        }
+    }
+
     private void route(Player player, Session s, String[] path, DialogResponseView view) {
         String action = path[0];
+        if (action.equals("nop")) return;
         if (action.equals("close")) {
             close(player, true);
             return;
@@ -681,6 +1341,7 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             unlocked(player, s);
             return;
         }
+        if (!action.startsWith("photo") && !action.equals("camback")) s.fromCamera = s.fromCamera && action.equals("photos");
         switch (action) {
             case "home" -> openHome(player);
             case "settings" -> openSettings(player);
@@ -727,21 +1388,99 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             case "camera" -> {
                 // the dialog goes, the session stays unlocked for as long as the camera is in use
                 close(player, true);
-                camera.enter(player);
+                if (items.holdsPhone(player)) camera.enter(player);
+                else player.sendMessage(lang.get("camera.hold-phone"));
             }
-            case "print" -> {
+            case "camback" -> {
                 close(player, true);
-                camera.print(player);
+                s.fromCamera = false;
             }
-            case "retake" -> {
-                close(player, true);
-                camera.discard(player);
+            case "photos" -> openPhotos(player, Integer.parseInt(path[1]));
+            case "photoplay" -> playPhoto(player, s, Integer.parseInt(path[1]));
+            case "photoprint" -> printPhoto(player, s, Long.parseLong(path[1]));
+            case "photodel" -> deletePhoto(player, s, Long.parseLong(path[1]));
+            case "photoshare" -> openShare(player, s, Long.parseLong(path[1]));
+            case "sendphoto" -> sendPhoto(player, s, Long.parseLong(path[1]), UUID.fromString(path[2]));
+            case "sharegram" -> {
+                s.gramBack = () -> openPhotos(player, s.photoIndex);
+                gramCompose(player, s, Long.parseLong(path[1]));
             }
+            case "gram" -> openGram(player);
+            default -> routeGram(player, s, action, path, view);
+        }
+    }
+
+    /** Opens the composer on one picture of the player's Photos. */
+    private void gramCompose(Player player, Session s, long galleryId) {
+        Tasks.onMain(plugin, gallery.list(player.getUniqueId()), list -> {
+            int at = 0;
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i).id() == galleryId) at = i;
+            }
+            int index = at;
+            Tasks.onMain(plugin, gram.account(player.getUniqueId()), acct -> {
+                if (acct == null) openGram(player);
+                else openCompose(player, s, index, null);
+            });
+        });
+    }
+
+    private void routeGram(Player player, Session s, String action, String[] path, DialogResponseView view) {
+        if (!gram.mayUse(player)) {
+            close(player, true);
+            player.sendMessage(lang.get("error.no-permission"));
+            return;
+        }
+        switch (action) {
+            case "gramsave" -> saveAccount(player, s, Boolean.parseBoolean(path[1]), view);
+            case "gramf" -> {
+                s.gramBack = null;
+                openFeed(player, s, null, Integer.parseInt(path[1]));
+            }
+            case "gramp" -> openFeed(player, s, UUID.fromString(path[1]), Integer.parseInt(path[2]));
+            case "gramme" -> {
+                UUID me = player.getUniqueId();
+                if (s.screen == Screen.GRAM_FEED && me.equals(s.gramProfile)) {
+                    // the profile tab on your own profile edits it
+                    Tasks.onMain(plugin, gram.account(me), acct -> {
+                        if (acct != null && player.isOnline()) openAccount(player, s, false, acct.handle(), acct.bio());
+                    });
+                } else {
+                    Tasks.onMain(plugin, gram.account(me), acct -> {
+                        if (!player.isOnline()) return;
+                        if (acct == null) openAccount(player, s, true, Gram.suggestHandle(player.getName()), "");
+                        else openFeed(player, s, me, 0);
+                    });
+                }
+            }
+            case "gramlike" -> onPost(player, s, (post, done) -> gram.like(player, post, done));
+            case "gramrp" -> onPost(player, s, (post, done) -> gram.repost(player, post, done));
+            case "gramdel" -> deletePost(player, s);
+            case "gramcom" -> openComments(player, s, Integer.parseInt(path[1]));
+            case "gramsay" -> sayComment(player, s, view);
+            case "gramdelc" -> openDeleteComment(player, s);
+            case "gramdelcid" -> gram.deleteComment(player, Long.parseLong(path[1]), result -> {
+                if (!player.isOnline()) return;
+                s.notice = result == Gram.Result.OK ? lang.plain("ui.gram.comment-deleted") : gramError(result);
+                openComments(player, s, s.commentsSkip);
+            });
+            case "gramback" -> reopenGram(player, s);
+            case "gramnew" -> {
+                if (s.screen != Screen.GRAM_COMPOSE && s.screen != Screen.PHOTOS) {
+                    Runnable back = s.gramBack;
+                    s.gramBack = back;
+                }
+                openCompose(player, s, Integer.parseInt(path[1]), view);
+            }
+            case "grampost" -> publish(player, s, Long.parseLong(path[1]), view);
+            case "gramsearch" -> openSearch(player, s, view);
+            case "gramact" -> openActivity(player, s);
+            case "grampost-open" -> openPost(player, s, Long.parseLong(path[1]));
             default -> close(player, true);
         }
     }
 
-    // ---- incoming messages ------------------------------------------------------------------------------------------
+    // ---- incoming messages and activity -----------------------------------------------------------------------------
 
     /** Sends the screen a player is looking at again, once, a little later (several changes become one refresh). */
     private void refreshLater(Player player, Session s) {
@@ -767,6 +1506,13 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         boolean onList = s != null && (s.screen == Screen.HOME || s.screen == Screen.CONTACTS);
         if (watching || onList) refreshLater(recipient, s);
         if (!watching) hint(recipient, lang.get("message.hint", Lang.ph("player", senderName)));
+    }
+
+    @Override
+    public void activity(Player author, String handle, String kind) {
+        if (!cfg.gramNotify) return;
+        sounds.play(author, Sounds.Cue.NOTIFY);
+        hint(author, lang.get("message.gram-" + kind, Lang.ph("player", handle)));
     }
 
     @Override
@@ -818,7 +1564,9 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
     public void onQuit(PlayerQuitEvent e) {
         Session s = sessions.remove(e.getPlayer().getUniqueId());
         if (s != null && s.refresh != null) s.refresh.cancel();
+        if (s != null) stopPlayback(s);
         postFx.forget(e.getPlayer());
+        gram.quit(e.getPlayer());
     }
 
     /** Closes every open phone screen (plugin disable, reload). */

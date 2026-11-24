@@ -73,6 +73,24 @@ public final class Database {
                 addColumn(st, "players", "pass_hash TEXT");
                 addColumn(st, "players", "pass_salt TEXT");
                 addColumn(st, "photos", "frames INTEGER NOT NULL DEFAULT 0");
+                // 1.2: the Photos app and Minestagram
+                st.execute("CREATE TABLE IF NOT EXISTS gallery (id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, "
+                        + "taken_at INTEGER NOT NULL, frames INTEGER NOT NULL, fps INTEGER NOT NULL, world TEXT, x INTEGER, y INTEGER, "
+                        + "z INTEGER, from_name TEXT)");
+                st.execute("CREATE INDEX IF NOT EXISTS gallery_owner ON gallery (owner, id)");
+                st.execute("CREATE TABLE IF NOT EXISTS gram_accounts (uuid TEXT PRIMARY KEY, handle TEXT NOT NULL, bio TEXT NOT NULL DEFAULT '', "
+                        + "created_at INTEGER NOT NULL)");
+                st.execute("CREATE UNIQUE INDEX IF NOT EXISTS gram_handle ON gram_accounts (handle COLLATE NOCASE)");
+                st.execute("CREATE TABLE IF NOT EXISTS gram_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT NOT NULL, "
+                        + "created_at INTEGER NOT NULL, caption TEXT NOT NULL DEFAULT '', frames INTEGER NOT NULL DEFAULT 1, "
+                        + "fps INTEGER NOT NULL DEFAULT 1, repost_of INTEGER)");
+                st.execute("CREATE INDEX IF NOT EXISTS gram_posts_author ON gram_posts (author, id)");
+                st.execute("CREATE INDEX IF NOT EXISTS gram_posts_repost ON gram_posts (repost_of)");
+                st.execute("CREATE TABLE IF NOT EXISTS gram_likes (post_id INTEGER NOT NULL, uuid TEXT NOT NULL, at INTEGER NOT NULL, "
+                        + "PRIMARY KEY (post_id, uuid))");
+                st.execute("CREATE TABLE IF NOT EXISTS gram_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, "
+                        + "author TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL)");
+                st.execute("CREATE INDEX IF NOT EXISTS gram_comments_post ON gram_comments (post_id, id)");
             }
             return null;
         }).get();
@@ -490,6 +508,399 @@ public final class Database {
             }
             return out;
         }).get();
+    }
+
+    // ---- the Photos app ---------------------------------------------------------------------------------------------
+
+    /** One picture in a player's Photos app. {@code frames} 1 = photo. {@code fromName}: who sent it, null = taken by the owner. */
+    public record GalleryItem(long id, UUID owner, long takenAt, int frames, int fps, String world, int x, int y, int z, String fromName) {
+        public boolean video() {
+            return frames > 1;
+        }
+    }
+
+    private static GalleryItem galleryItem(ResultSet rs) throws SQLException {
+        return new GalleryItem(rs.getLong("id"), UUID.fromString(rs.getString("owner")), rs.getLong("taken_at"), rs.getInt("frames"),
+                rs.getInt("fps"), rs.getString("world"), rs.getInt("x"), rs.getInt("y"), rs.getInt("z"), rs.getString("from_name"));
+    }
+
+    /** Adds a picture to a player's Photos when they have fewer than {@code limit}; the new id, or -1 when full. */
+    public CompletableFuture<Long> insertGallery(UUID owner, long takenAt, int frames, int fps, String world, int x, int y, int z,
+                                                 String fromName, int limit) {
+        return async("save to photos", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT COUNT(*) FROM gallery WHERE owner = ?")) {
+                ps.setString(1, owner.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) >= limit) return -1L;
+                }
+            }
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO gallery (owner, taken_at, frames, fps, world, x, y, z, from_name) "
+                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, owner.toString());
+                ps.setLong(2, takenAt);
+                ps.setInt(3, frames);
+                ps.setInt(4, fps);
+                ps.setString(5, world);
+                ps.setInt(6, x);
+                ps.setInt(7, y);
+                ps.setInt(8, z);
+                ps.setString(9, fromName);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    return rs.next() ? rs.getLong(1) : -1L;
+                }
+            }
+        });
+    }
+
+    /** A player's Photos, newest first. */
+    public CompletableFuture<List<GalleryItem>> gallery(UUID owner) {
+        return async("load photos", () -> {
+            List<GalleryItem> out = new ArrayList<>();
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM gallery WHERE owner = ? ORDER BY id DESC")) {
+                ps.setString(1, owner.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) out.add(galleryItem(rs));
+                }
+            }
+            return out;
+        });
+    }
+
+    public CompletableFuture<GalleryItem> galleryItem(long id) {
+        return async("load photo", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT * FROM gallery WHERE id = ?")) {
+                ps.setLong(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? galleryItem(rs) : null;
+                }
+            }
+        });
+    }
+
+    /** Removes a picture its owner has. True when a row went. */
+    public CompletableFuture<Boolean> deleteGallery(long id, UUID owner) {
+        return async("delete photo", () -> {
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM gallery WHERE id = ? AND owner = ?")) {
+                ps.setLong(1, id);
+                ps.setString(2, owner.toString());
+                return ps.executeUpdate() > 0;
+            }
+        });
+    }
+
+    // ---- Minestagram ------------------------------------------------------------------------------------------------
+
+    public record GramAccount(UUID id, String handle, String bio, long createdAt, int posts) {}
+
+    /**
+     * One entry of a feed. {@code entryId} is the row in the feed (a post or a repost); everything else describes
+     * the post that is shown (for a repost: the original). {@code reposter} is the handle of who reposted, else null.
+     */
+    public record GramPost(long entryId, long id, UUID author, String handle, long createdAt, String caption, int frames, int fps,
+                           int likes, int comments, int reposts, boolean liked, boolean reposted, UUID reposterId, String reposter) {}
+
+    public record GramComment(long id, long postId, UUID author, String handle, String body, long at) {}
+
+    /** Someone liked, commented on or reposted one of your posts. {@code kind}: like, comment, repost. */
+    public record GramActivity(String kind, UUID who, String handle, long postId, long at, String text) {}
+
+    private static GramAccount gramAccount(ResultSet rs) throws SQLException {
+        return new GramAccount(UUID.fromString(rs.getString("uuid")), rs.getString("handle"), rs.getString("bio"),
+                rs.getLong("created_at"), rs.getInt("posts"));
+    }
+
+    private static final String ACCOUNT_SELECT = "SELECT a.*, (SELECT COUNT(*) FROM gram_posts p WHERE p.author = a.uuid "
+            + "AND p.repost_of IS NULL) AS posts FROM gram_accounts a ";
+
+    public CompletableFuture<GramAccount> gramAccount(UUID id) {
+        return async("load account", () -> {
+            try (PreparedStatement ps = db.prepareStatement(ACCOUNT_SELECT + "WHERE a.uuid = ?")) {
+                ps.setString(1, id.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? gramAccount(rs) : null;
+                }
+            }
+        });
+    }
+
+    /** Creates or changes an account. False when another player has that handle already. */
+    public CompletableFuture<Boolean> saveGramAccount(UUID id, String handle, String bio, long now) {
+        return async("save account", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT 1 FROM gram_accounts WHERE handle = ? COLLATE NOCASE AND uuid <> ?")) {
+                ps.setString(1, handle);
+                ps.setString(2, id.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) return false;
+                }
+            }
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO gram_accounts (uuid, handle, bio, created_at) VALUES (?, ?, ?, ?) "
+                    + "ON CONFLICT(uuid) DO UPDATE SET handle = excluded.handle, bio = excluded.bio")) {
+                ps.setString(1, id.toString());
+                ps.setString(2, handle);
+                ps.setString(3, bio);
+                ps.setLong(4, now);
+                ps.executeUpdate();
+            }
+            return true;
+        });
+    }
+
+    /** Accounts whose handle contains {@code needle} (all when empty), newest first. */
+    public CompletableFuture<List<GramAccount>> searchGram(String needle, int limit) {
+        return async("search accounts", () -> {
+            List<GramAccount> out = new ArrayList<>();
+            String like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+            try (PreparedStatement ps = db.prepareStatement(ACCOUNT_SELECT + "WHERE a.handle LIKE ? ESCAPE '\\' ORDER BY a.created_at DESC LIMIT ?")) {
+                ps.setString(1, like);
+                ps.setInt(2, limit);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) out.add(gramAccount(rs));
+                }
+            }
+            return out;
+        });
+    }
+
+    public CompletableFuture<Long> insertGramPost(UUID author, long now, String caption, int frames, int fps, Long repostOf) {
+        return async("save post", () -> {
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO gram_posts (author, created_at, caption, frames, fps, repost_of) "
+                    + "VALUES (?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, author.toString());
+                ps.setLong(2, now);
+                ps.setString(3, caption);
+                ps.setInt(4, frames);
+                ps.setInt(5, fps);
+                if (repostOf == null) ps.setNull(6, java.sql.Types.INTEGER);
+                else ps.setLong(6, repostOf);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    return rs.next() ? rs.getLong(1) : -1L;
+                }
+            }
+        });
+    }
+
+    private static final String POST_SELECT = "SELECT e.id AS entry_id, e.author AS entry_author, ea.handle AS entry_handle, e.repost_of, "
+            + "p.id, p.author, a.handle, p.created_at, p.caption, p.frames, p.fps, "
+            + "(SELECT COUNT(*) FROM gram_likes l WHERE l.post_id = p.id) AS likes, "
+            + "(SELECT COUNT(*) FROM gram_comments c WHERE c.post_id = p.id) AS comments, "
+            + "(SELECT COUNT(*) FROM gram_posts r WHERE r.repost_of = p.id) AS reposts, "
+            + "EXISTS (SELECT 1 FROM gram_likes l WHERE l.post_id = p.id AND l.uuid = ?) AS liked, "
+            + "EXISTS (SELECT 1 FROM gram_posts r WHERE r.repost_of = p.id AND r.author = ?) AS reposted "
+            + "FROM gram_posts e JOIN gram_posts p ON p.id = COALESCE(e.repost_of, e.id) "
+            + "LEFT JOIN gram_accounts a ON a.uuid = p.author LEFT JOIN gram_accounts ea ON ea.uuid = e.author ";
+
+    private static GramPost gramPost(ResultSet rs) throws SQLException {
+        boolean repost = rs.getObject("repost_of") != null;
+        String handle = rs.getString("handle");
+        return new GramPost(rs.getLong("entry_id"), rs.getLong("id"), UUID.fromString(rs.getString("author")), handle == null ? "?" : handle,
+                rs.getLong("created_at"), rs.getString("caption"), rs.getInt("frames"), rs.getInt("fps"), rs.getInt("likes"),
+                rs.getInt("comments"), rs.getInt("reposts"), rs.getInt("liked") != 0, rs.getInt("reposted") != 0,
+                repost ? UUID.fromString(rs.getString("entry_author")) : null, repost ? rs.getString("entry_handle") : null);
+    }
+
+    /** A page of a feed (one entry per page) and how many entries there are. */
+    public record GramPage(GramPost post, int index, int total) {}
+
+    /**
+     * Entry {@code index} (0 = newest) of the whole feed ({@code author} null) or of one account's posts and reposts.
+     * An index past the end shows the last entry.
+     */
+    public CompletableFuture<GramPage> gramFeed(UUID viewer, UUID author, int index) {
+        return async("load feed", () -> {
+            String where = author == null ? "" : "WHERE e.author = ? ";
+            int total;
+            try (PreparedStatement ps = db.prepareStatement("SELECT COUNT(*) FROM gram_posts e " + where)) {
+                if (author != null) ps.setString(1, author.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    total = rs.next() ? rs.getInt(1) : 0;
+                }
+            }
+            if (total == 0) return new GramPage(null, 0, 0);
+            int at = Math.clamp(index, 0, total - 1);
+            try (PreparedStatement ps = db.prepareStatement(POST_SELECT + where + "ORDER BY e.id DESC LIMIT 1 OFFSET ?")) {
+                ps.setString(1, viewer.toString());
+                ps.setString(2, viewer.toString());
+                int i = 3;
+                if (author != null) ps.setString(i++, author.toString());
+                ps.setInt(i, at);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return new GramPage(rs.next() ? gramPost(rs) : null, at, total);
+                }
+            }
+        });
+    }
+
+    /** One post by its id (as an entry of its own), or null. */
+    public CompletableFuture<GramPost> gramPost(UUID viewer, long id) {
+        return async("load post", () -> {
+            try (PreparedStatement ps = db.prepareStatement(POST_SELECT + "WHERE e.id = ?")) {
+                ps.setString(1, viewer.toString());
+                ps.setString(2, viewer.toString());
+                ps.setLong(3, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? gramPost(rs) : null;
+                }
+            }
+        });
+    }
+
+    /** Likes or unlikes. True when the post exists. */
+    public CompletableFuture<Boolean> setGramLike(long postId, UUID who, boolean like, long now) {
+        return async("like", () -> {
+            if (!postExists(postId)) return false;
+            try (PreparedStatement ps = db.prepareStatement(like ? "INSERT OR IGNORE INTO gram_likes (post_id, uuid, at) VALUES (?, ?, ?)"
+                    : "DELETE FROM gram_likes WHERE post_id = ? AND uuid = ?")) {
+                ps.setLong(1, postId);
+                ps.setString(2, who.toString());
+                if (like) ps.setLong(3, now);
+                ps.executeUpdate();
+            }
+            return true;
+        });
+    }
+
+    private boolean postExists(long id) throws SQLException {
+        try (PreparedStatement ps = db.prepareStatement("SELECT 1 FROM gram_posts WHERE id = ? AND repost_of IS NULL")) {
+            ps.setLong(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Reposts {@code postId}, or takes the repost back when there is one. True = reposted now, false = removed, null = no post. */
+    public CompletableFuture<Boolean> toggleGramRepost(long postId, UUID who, long now) {
+        return async("repost", () -> {
+            if (!postExists(postId)) return null;
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM gram_posts WHERE repost_of = ? AND author = ?")) {
+                ps.setLong(1, postId);
+                ps.setString(2, who.toString());
+                if (ps.executeUpdate() > 0) return false;
+            }
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO gram_posts (author, created_at, caption, frames, fps, repost_of) "
+                    + "VALUES (?, ?, '', 1, 1, ?)")) {
+                ps.setString(1, who.toString());
+                ps.setLong(2, now);
+                ps.setLong(3, postId);
+                ps.executeUpdate();
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Deletes a post with its likes, comments and reposts ({@code author} null: whoever wrote it, for moderators).
+     * True when it existed; a repost row is deleted on its own.
+     */
+    public CompletableFuture<Boolean> deleteGramPost(long id, UUID author) {
+        return async("delete post", () -> {
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM gram_posts WHERE id = ?" + (author == null ? "" : " AND author = ?"))) {
+                ps.setLong(1, id);
+                if (author != null) ps.setString(2, author.toString());
+                if (ps.executeUpdate() == 0) return false;
+            }
+            for (String sql : new String[] {"DELETE FROM gram_likes WHERE post_id = ?", "DELETE FROM gram_comments WHERE post_id = ?",
+                    "DELETE FROM gram_posts WHERE repost_of = ?"}) {
+                try (PreparedStatement ps = db.prepareStatement(sql)) {
+                    ps.setLong(1, id);
+                    ps.executeUpdate();
+                }
+            }
+            return true;
+        });
+    }
+
+    public CompletableFuture<Long> insertGramComment(long postId, UUID author, String body, long now) {
+        return async("save comment", () -> {
+            if (!postExists(postId)) return -1L;
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO gram_comments (post_id, author, body, at) VALUES (?, ?, ?, ?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                ps.setLong(1, postId);
+                ps.setString(2, author.toString());
+                ps.setString(3, body);
+                ps.setLong(4, now);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    return rs.next() ? rs.getLong(1) : -1L;
+                }
+            }
+        });
+    }
+
+    /** Comments of a post, newest first. */
+    public CompletableFuture<List<GramComment>> gramComments(long postId, int skip, int limit) {
+        return async("load comments", () -> {
+            List<GramComment> out = new ArrayList<>();
+            try (PreparedStatement ps = db.prepareStatement("SELECT c.*, a.handle FROM gram_comments c LEFT JOIN gram_accounts a "
+                    + "ON a.uuid = c.author WHERE c.post_id = ? ORDER BY c.id DESC LIMIT ? OFFSET ?")) {
+                ps.setLong(1, postId);
+                ps.setInt(2, limit);
+                ps.setInt(3, skip);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String handle = rs.getString("handle");
+                        out.add(new GramComment(rs.getLong("id"), postId, UUID.fromString(rs.getString("author")),
+                                handle == null ? "?" : handle, rs.getString("body"), rs.getLong("at")));
+                    }
+                }
+            }
+            return out;
+        });
+    }
+
+    /** Deletes a comment ({@code author} null: any author, for moderators and the post's author). */
+    public CompletableFuture<Boolean> deleteGramComment(long id, UUID author) {
+        return async("delete comment", () -> {
+            try (PreparedStatement ps = db.prepareStatement("DELETE FROM gram_comments WHERE id = ?" + (author == null ? "" : " AND author = ?"))) {
+                ps.setLong(1, id);
+                if (author != null) ps.setString(2, author.toString());
+                return ps.executeUpdate() > 0;
+            }
+        });
+    }
+
+    public CompletableFuture<GramComment> gramComment(long id) {
+        return async("load comment", () -> {
+            try (PreparedStatement ps = db.prepareStatement("SELECT c.*, a.handle FROM gram_comments c LEFT JOIN gram_accounts a "
+                    + "ON a.uuid = c.author WHERE c.id = ?")) {
+                ps.setLong(1, id);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return null;
+                    String handle = rs.getString("handle");
+                    return new GramComment(id, rs.getLong("post_id"), UUID.fromString(rs.getString("author")), handle == null ? "?" : handle,
+                            rs.getString("body"), rs.getLong("at"));
+                }
+            }
+        });
+    }
+
+    /** What others did with {@code owner}'s posts, newest first. */
+    public CompletableFuture<List<GramActivity>> gramActivity(UUID owner, int limit) {
+        return async("load activity", () -> {
+            List<GramActivity> out = new ArrayList<>();
+            String sql = "SELECT x.kind, x.who, a.handle, x.post_id, x.at, x.text FROM ("
+                    + "SELECT 'like' AS kind, l.uuid AS who, l.post_id AS post_id, l.at AS at, '' AS text FROM gram_likes l "
+                    + "JOIN gram_posts p ON p.id = l.post_id WHERE p.author = ? AND l.uuid <> ? "
+                    + "UNION ALL SELECT 'comment', c.author, c.post_id, c.at, c.body FROM gram_comments c "
+                    + "JOIN gram_posts p ON p.id = c.post_id WHERE p.author = ? AND c.author <> ? "
+                    + "UNION ALL SELECT 'repost', r.author, r.repost_of, r.created_at, '' FROM gram_posts r "
+                    + "JOIN gram_posts p ON p.id = r.repost_of WHERE p.author = ? AND r.author <> ?"
+                    + ") x LEFT JOIN gram_accounts a ON a.uuid = x.who ORDER BY x.at DESC LIMIT ?";
+            try (PreparedStatement ps = db.prepareStatement(sql)) {
+                for (int i = 1; i <= 6; i++) ps.setString(i, owner.toString());
+                ps.setInt(7, limit);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String handle = rs.getString(3);
+                        out.add(new GramActivity(rs.getString(1), UUID.fromString(rs.getString(2)), handle == null ? "?" : handle,
+                                rs.getLong(4), rs.getLong(5), rs.getString(6)));
+                    }
+                }
+            }
+            return out;
+        });
     }
 
     public record KnownPlayer(UUID id, String name) {}

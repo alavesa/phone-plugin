@@ -106,6 +106,13 @@ public final class Line {
         return text(right - widths.width(text, false), text, colour, false);
     }
 
+    /** A picture built by {@link PhotoText} with its top-left corner at {@code x}, hanging down from this line. */
+    public Line photo(int x, Component picture) {
+        moveTo(x);
+        out.append(picture);
+        return this;
+    }
+
     /** The face of a player (8x8), drawn by the client from the skin of that profile. */
     public Line head(int x, UUID player) {
         moveTo(x);

@@ -32,13 +32,52 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public int rowButtonWidth() {
-        return WIDTH;
+    public int buttonWidth(int columns) {
+        return switch (columns) {
+            case 1 -> 200;
+            case 2 -> 100;
+            case 3 -> 70;
+            default -> 46;
+        };
     }
 
     @Override
-    public int appButtonWidth() {
-        return 92;
+    public boolean framed() {
+        return false;
+    }
+
+    @Override
+    public Component button(Views.Btn b, int columns, boolean first) {
+        String icon = b.icon() == null ? "" : switch (b.icon()) {
+            case "left" -> "<";
+            case "right" -> ">";
+            case "heart" -> "\u2661";
+            case "heart_full" -> "\u2665";
+            case "comment" -> "\u2709";
+            case "repost" -> "\u21c4";
+            case "home" -> "\u2302";
+            case "search" -> "?";
+            case "plus" -> "+";
+            case "profile" -> "@";
+            case "play" -> "\u25b6";
+            case "trash" -> "x";
+            default -> "";
+        };
+        String text = (icon + " " + b.label()).strip();
+        NamedTextColor colour = switch (b.tone()) {
+            case NORMAL -> NamedTextColor.WHITE;
+            case DIM -> NamedTextColor.GRAY;
+            case ACCENT -> NamedTextColor.LIGHT_PURPLE;
+            case ACTIVE -> NamedTextColor.RED;
+            case PRINT -> NamedTextColor.AQUA;
+            case DANGER -> NamedTextColor.RED;
+        };
+        return Component.text(text, colour);
+    }
+
+    @Override
+    public Component homeBar() {
+        return Component.text(lang.plain("ui.button.home"));
     }
 
     private static Component lines(List<Component> lines) {
@@ -54,7 +93,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component lock(Views.Lock v, int belowPx) {
+    public Component lock(Views.Lock v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(v.clock(), NamedTextColor.WHITE, TextDecoration.BOLD));
         out.add(gray(v.date()));
@@ -68,7 +107,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component home(Views.Home v, int belowPx) {
+    public Component home(Views.Home v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(gray(v.clock()));
         out.add(Component.text(lang.plain("ui.home.greeting", "player", v.playerName()), NamedTextColor.WHITE));
@@ -77,13 +116,13 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component appButton(String app, String label, int badge) {
+    public Component appButton(String app, String label, int badge, boolean first) {
         Component out = Component.text(label);
         return badge > 0 ? out.append(Component.text(" (" + (badge > 99 ? "99+" : badge) + ")", NamedTextColor.RED)) : out;
     }
 
     @Override
-    public Component contacts(Views.Contacts v, int belowPx) {
+    public Component contacts(Views.Contacts v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(lang.plain("ui.contacts.title"), NamedTextColor.WHITE, TextDecoration.BOLD));
         if (!v.filter().isEmpty()) out.add(gray(lang.plain("ui.contacts.filter", "filter", v.filter())));
@@ -95,7 +134,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component contactButton(Views.Contact c) {
+    public Component contactButton(Views.Contact c, boolean first) {
         Component out = Component.text(c.unread() > 0 ? "(" + c.unread() + ") " : "", NamedTextColor.RED)
                 .append(Component.text(c.name(), c.online() ? NamedTextColor.WHITE : NamedTextColor.GRAY));
         if (!c.preview().isEmpty()) {
@@ -122,7 +161,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component conversation(Views.Conversation v, int belowPx) {
+    public Component conversation(Views.Conversation v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(v.partnerName(), NamedTextColor.WHITE, TextDecoration.BOLD)
                 .append(Component.text(" - " + lang.plain(v.online() ? "ui.conversation.online" : "ui.conversation.offline"),
@@ -137,7 +176,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component ownMessages(Views.OwnMessages v, int belowPx) {
+    public Component ownMessages(Views.OwnMessages v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(lang.plain("ui.edit.title"), NamedTextColor.WHITE, TextDecoration.BOLD));
         out.add(gray(lang.plain("ui.edit.to", "player", v.partnerName())));
@@ -147,12 +186,12 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component ownMessageButton(Views.Bubble m) {
+    public Component ownMessageButton(Views.Bubble m, boolean first) {
         return gray("[" + m.time() + "] ").append(Component.text(fw.ellipsize(m.body(), WIDTH - 90, false), NamedTextColor.WHITE));
     }
 
     @Override
-    public Component editMessage(Views.EditMessage v, int belowPx) {
+    public Component editMessage(Views.EditMessage v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(lang.plain("ui.edit.title"), NamedTextColor.WHITE, TextDecoration.BOLD));
         out.add(v.notice().isEmpty() ? gray(lang.plain("ui.edit.hint")) : red(v.notice()));
@@ -161,21 +200,131 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public Component photoResult(Views.PhotoResult v, int belowPx) {
-        List<Component> out = new ArrayList<>();
-        out.add(Component.text(v.seconds() > 0 ? lang.plain("ui.camera.recorded", "seconds", String.format(Locale.ROOT, "%.1f", v.seconds()))
-                : lang.plain("ui.camera.captured"), NamedTextColor.WHITE));
-        out.add(gray(lang.plain("ui.camera.zoom", "zoom", v.zoom())));
-        if (!v.location().isEmpty()) out.add(gray(v.location()));
-        return lines(out);
-    }
-
-    @Override
-    public Component settings(Views.Settings v, int belowPx) {
+    public Component settings(Views.Settings v, int inputsPx) {
         List<Component> out = new ArrayList<>();
         out.add(Component.text(lang.plain("ui.settings.title"), NamedTextColor.WHITE, TextDecoration.BOLD));
         out.add(Component.text(v.playerName(), NamedTextColor.WHITE));
         out.add(gray(v.packLine()));
         return lines(out);
+    }
+
+    // ---- photos and Minestagram: no pictures without the pack, only what they are -----------------------------------
+
+    private static Component title(String text) {
+        return Component.text(text, NamedTextColor.WHITE, TextDecoration.BOLD);
+    }
+
+    @Override
+    public Component photos(Views.Photos v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.photos.title") + (v.count() > 0 ? "  " + (v.index() + 1) + "/" + v.count() : "")));
+        if (v.photo() == null) {
+            out.add(Component.text(lang.plain("ui.photos.empty"), NamedTextColor.WHITE));
+            out.add(gray(lang.plain("ui.photos.empty-hint")));
+        } else {
+            out.add(gray(lang.plain("ui.photos.no-pack")));
+            out.add(Component.text(v.info(), NamedTextColor.WHITE));
+        }
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component share(Views.Share v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.share.title")));
+        out.add(gray(lang.plain("ui.share.hint")));
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component feed(Views.Feed v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        Views.Profile p = v.profile();
+        String pager = v.total() > 0 ? "  " + (v.index() + 1) + "/" + v.total() : "";
+        if (p == null) {
+            out.add(title(lang.plain("ui.gram.title") + pager));
+        } else {
+            out.add(title("@" + p.handle() + pager));
+            out.add(gray(lang.plain("ui.gram.post-count", "count", p.posts()) + (p.bio().isEmpty() ? "" : " - " + p.bio())));
+        }
+        Views.Post post = v.post();
+        if (post == null) {
+            out.add(Component.text(lang.plain(p == null ? "ui.gram.empty" : "ui.gram.empty-profile"), NamedTextColor.WHITE));
+        } else {
+            Component head = Component.text("@" + post.handle(), NamedTextColor.WHITE, TextDecoration.BOLD)
+                    .append(gray("  " + post.age()).decoration(TextDecoration.BOLD, false));
+            if (post.reposter() != null) head = head.append(gray("  \u21c4 " + post.reposter()).decoration(TextDecoration.BOLD, false));
+            out.add(head);
+            out.add(gray(lang.plain(post.video() ? "ui.gram.a-video" : "ui.gram.a-photo")));
+            if (!post.caption().isEmpty()) out.add(Component.text(post.caption(), NamedTextColor.WHITE));
+            out.add(gray("\u2665 " + post.likes() + "   \u2709 " + post.comments() + "   \u21c4 " + post.reposts()));
+        }
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component comments(Views.Comments v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.gram.comments")));
+        out.add(gray("@" + v.postHandle() + (v.caption().isEmpty() ? "" : ": " + v.caption())));
+        if (v.hasOlder()) out.add(gray(lang.plain("ui.gram.older-comments")));
+        if (v.comments().isEmpty()) out.add(gray(lang.plain("ui.gram.first-comment")));
+        for (Views.Comment c : v.comments()) {
+            out.add(Component.text(c.handle() + " ", NamedTextColor.YELLOW).append(Component.text(c.body(), NamedTextColor.WHITE))
+                    .append(Component.text("  " + c.age(), NamedTextColor.DARK_GRAY)));
+        }
+        if (v.hasNewer()) out.add(gray(lang.plain("ui.gram.newer-comments")));
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component account(Views.Account v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.gram.title")));
+        out.add(Component.text(lang.plain(v.create() ? "ui.gram.create" : "ui.gram.edit"), NamedTextColor.WHITE));
+        out.add(gray(lang.plain("ui.gram.handle-rules")));
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component compose(Views.Compose v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.gram.new-post") + (v.count() > 0 ? "  " + (v.index() + 1) + "/" + v.count() : "")));
+        out.add(gray(lang.plain(v.photo() == null ? "ui.photos.empty" : "ui.photos.no-pack")));
+        out.add(v.notice().isEmpty() ? gray(lang.plain("ui.gram.pick-hint")) : red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component search(Views.Search v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.gram.search")));
+        out.add(gray(v.results() == 0 ? lang.plain("ui.gram.nobody")
+                : v.query().isEmpty() ? lang.plain("ui.gram.newest-accounts") : lang.plain("ui.gram.results", "query", v.query())));
+        if (!v.notice().isEmpty()) out.add(red(v.notice()));
+        return lines(out);
+    }
+
+    @Override
+    public Component accountButton(java.util.UUID id, String handle, int posts, boolean first) {
+        return Component.text("@" + handle, NamedTextColor.WHITE).append(gray("  " + lang.plain("ui.gram.post-count", "count", posts)));
+    }
+
+    @Override
+    public Component activity(Views.Activity v, int inputsPx) {
+        List<Component> out = new ArrayList<>();
+        out.add(title(lang.plain("ui.gram.activity")));
+        out.add(gray(lang.plain(v.count() == 0 ? "ui.gram.no-activity" : "ui.gram.activity-hint")));
+        return lines(out);
+    }
+
+    @Override
+    public Component activityButton(java.util.UUID who, String icon, String text, String age, boolean first) {
+        return Component.text(fw.ellipsize(text, 150, false), NamedTextColor.WHITE).append(gray("  " + age));
     }
 }

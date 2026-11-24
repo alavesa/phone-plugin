@@ -5,11 +5,14 @@ import fi.alavesa.phone.camera.PhotoStore;
 import fi.alavesa.phone.camera.SkinCache;
 import fi.alavesa.phone.config.Lang;
 import fi.alavesa.phone.config.PhoneConfig;
+import fi.alavesa.phone.media.Gallery;
+import fi.alavesa.phone.media.MediaStore;
 import fi.alavesa.phone.messaging.MessageService;
 import fi.alavesa.phone.phone.PhoneCommand;
 import fi.alavesa.phone.phone.PhoneItems;
 import fi.alavesa.phone.phone.PhoneListener;
 import fi.alavesa.phone.resourcepack.PackService;
+import fi.alavesa.phone.social.Gram;
 import fi.alavesa.phone.storage.Database;
 import fi.alavesa.phone.storage.PlayerSettings;
 import fi.alavesa.phone.ui.FontWidths;
@@ -45,6 +48,10 @@ public final class PhonePlugin extends JavaPlugin {
     private MessageService messages;
     private PhotoStore photos;
     private CameraService camera;
+    private MediaStore galleryFiles;
+    private MediaStore gramFiles;
+    private Gallery gallery;
+    private Gram gram;
     private UiController ui;
     private PhoneListener phoneListener;
 
@@ -91,14 +98,20 @@ public final class PhonePlugin extends JavaPlugin {
         messages = new MessageService(this, database, cfg, mutes);
         photos = new PhotoStore(this, database, items, cfg, lang, photoIds);
         SkinCache skins = new SkinCache(this, cfg.playerSkins);
-        camera = new CameraService(this, settings, skins, items, pack, postFx, sounds, photos, cfg, lang);
-        ui = new UiController(this, database, messages, items, pack, settings, postFx, sounds, camera, glyphs, widths, cfg, lang);
+        galleryFiles = new MediaStore(getLogger(), new File(getDataFolder(), "gallery"));
+        gramFiles = new MediaStore(getLogger(), new File(getDataFolder(), "minestagram"));
+        gallery = new Gallery(database, galleryFiles, cfg.photosLimit);
+        gram = new Gram(this, database, gallery, gramFiles, messages, cfg);
+        camera = new CameraService(this, settings, skins, items, pack, postFx, sounds, photos, gallery, cfg, lang);
+        ui = new UiController(this, database, messages, items, pack, settings, postFx, sounds, camera, gallery, gram, glyphs, widths, cfg, lang);
+        gram.setNotifier(ui);
         phoneListener = new PhoneListener(this, items, messages, ui, camera);
         messages.setNotifier(ui);
         camera.setResultScreen(ui);
         camera.setItemSync(phoneListener::sync);
 
-        for (var listener : List.of(settings, pack, photos, skins, camera, ui, phoneListener)) {
+        camera.loadAssets();
+        for (var listener : List.of(settings, pack, photos, skins, camera, camera.captureListener(), ui, phoneListener)) {
             getServer().getPluginManager().registerEvents(listener, this);
         }
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event ->
@@ -117,6 +130,8 @@ public final class PhonePlugin extends JavaPlugin {
         if (pack != null) pack.stop();
         Bukkit.removeRecipe(RECIPE);
         if (database != null) database.close();
+        if (galleryFiles != null) galleryFiles.shutdown();
+        if (gramFiles != null) gramFiles.shutdown();
     }
 
     /** /phone reload: config.yml and the language file. The pack host and the database keep running as they are. */
@@ -130,6 +145,8 @@ public final class PhonePlugin extends JavaPlugin {
         messages.reload(cfg);
         photos.reload(cfg, lang);
         camera.reload(cfg, lang);
+        gallery.setLimit(cfg.photosLimit);
+        gram.reload(cfg);
         ui.reload(cfg, lang);
         registerRecipe();
     }
@@ -171,6 +188,10 @@ public final class PhonePlugin extends JavaPlugin {
         } catch (IllegalArgumentException e) {
             getLogger().warning("config: item.recipe is not a valid shaped recipe (" + e.getMessage() + "); the phone is not craftable");
         }
+    }
+
+    public Gram gram() {
+        return gram;
     }
 
     public Lang lang() {

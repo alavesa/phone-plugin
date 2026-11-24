@@ -1,5 +1,7 @@
 package fi.alavesa.phone.camera;
 
+import fi.alavesa.phone.camera.assets.Models;
+import fi.alavesa.phone.camera.assets.Tints;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -9,7 +11,7 @@ import org.bukkit.World;
 
 /**
  * Everything the ray tracer needs, copied out of the world on the main thread so the render can run on another
- * thread without touching Bukkit: the camera, immutable chunk snapshots and entity boxes.
+ * thread without touching Bukkit: the camera, immutable chunk snapshots, creatures and props.
  */
 final class Scene {
 
@@ -31,10 +33,15 @@ final class Scene {
     long time;
     boolean storm;
 
+    /** Block models and tints when the client assets are loaded; null = block colours only. */
+    Models models;
+    Tints tints;
+
     /** Shared between the frames of a video (filled once, then only read). */
     Map<Long, ChunkSnapshot> chunks = new HashMap<>();
     final List<Figure> figures = new ArrayList<>();
     final List<Box> entities = new ArrayList<>();
+    final List<Prop> props = new ArrayList<>();
 
     static long chunkKey(int chunkX, int chunkZ) {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);

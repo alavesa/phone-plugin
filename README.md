@@ -1,22 +1,56 @@
 # Phone
 
-A Paper plugin and resource pack that add a usable phone: right-click it to open a phone screen made of Paper
-dialogs. Lock screen with a passcode, a home screen with app icons, a Messages app (speech bubbles, contacts,
-scrolling, editing and deleting, unread dot on the item), a Camera app (viewfinder, zoom, front camera, photos and
-short videos printed onto maps) and Settings.
+A Paper plugin and resource pack that add a usable phone: right-click it to open a portrait phone screen made of
+Paper dialogs. Lock screen with a passcode, a home screen with an app list, Messages (speech bubbles, contacts,
+scrolling, editing and deleting, unread dot on the item), Camera (viewfinder, zoom, front camera, photos and short
+videos), Photos (every picture you took or were sent, shown inside the phone, printed onto maps, shared),
+Minestagram (accounts, posts, likes, comments, reposts, search, activity) and Settings.
 
 - Minecraft Java 26.3, Paper 26.3 (`paper-api:26.3.build.253-stable`), Java 25
 - Paper API and Adventure, nothing shaded. One class (`resourcepack/SamePortHttp`) reaches into the server's
   network listener by reflection so the pack can be downloaded through the Minecraft port; see Design decisions
 - Pack format 97; post effects only, no vanilla core shader is overridden
 
-| Lock screen | Home | Conversation |
-| --- | --- | --- |
-| ![Lock](docs/lock.png) | ![Home](docs/home.png) | ![Conversation](docs/conv.png) |
+| Home | Minestagram | Photos (video) | Comments |
+| --- | --- | --- | --- |
+| ![Home](docs/home.png) | ![Feed](docs/feed.png) | ![Photos](docs/photos.png) | ![Comments](docs/comments.png) |
 
-| Contacts | Viewfinder | Front camera photo |
-| --- | --- | --- |
-| ![Contacts](docs/contacts.png) | ![Viewfinder](docs/cam1.png) | ![Selfie](docs/selfie.png) |
+| Lock screen | Messages | Conversation | New post |
+| --- | --- | --- | --- |
+| ![Lock](docs/lock.png) | ![Contacts](docs/contacts.png) | ![Conversation](docs/conv.png) | ![New post](docs/compose.png) |
+
+| A photo (128x128, shown 4x) | Front camera |
+| --- | --- |
+| ![Photo](docs/photo-render.png) | ![Selfie](docs/selfie.png) |
+
+## Changes in 1.2.0
+
+- **New look.** The phone is portrait now: a black screen in a rounded bezel with the dynamic island, status bar
+  (time, signal, battery), white text, pink accents and the home indicator at the bottom (it is a button: Home).
+  The dialog's buttons are part of the screen: every row of buttons paints its own piece of the phone (see "The
+  screens"). Home is an app list.
+- **Photos app.** Every photo and video you take is kept in Photos (up to `photos.max-per-player`, default 100)
+  until you delete it, shown inside the phone, 128x128, pixel for pixel. Prev / Next, Print (a photo map, as
+  before; a video map for videos), Share (post to Minestagram or send a copy to a contact: it lands in their Photos
+  with a message) and Delete (press twice). Videos play inside the phone with Play. The old "Photo taken" screen
+  is gone: after the shutter the Photos app opens on the new picture; Back returns to the viewfinder.
+- **Minestagram.** Accounts (handle and bio, created the first time you open it), posts of a photo or video from
+  Photos with a caption, a feed with paging, likes, comments (delete your own; post authors and moderators may
+  delete any on their post), reposts, account search, an activity list of what happened to your posts, profile
+  pages (tap the profile tab on your own to edit it). Video posts play once when they come up. Rate limits, mutes
+  (`/phone mute` mutes Minestagram too), lengths and a post cooldown are in `config.yml`. Permissions `phone.gram`
+  and `phone.gram.moderate`. Pictures of posts are copies, so deleting a photo does not break a post.
+- **Photos look like the game.** With the client assets (the 26.3 client jar, downloaded once from Mojang into
+  `plugins/Phone/cache/`) photos show real block textures and block shapes (stairs, slabs, fences, flowers,
+  leaves, glass, stained glass, water, lava, rotated model elements), tinted grass, leaves and water by biome;
+  players with their second skin layer, arm swings and what they hold; zombies, skeletons, creepers, pigs, cows and
+  sheep with their textures; block, item and text displays with their transformation and billboard; heads worn by
+  armour stands at their head pose. So ragdolls and props built from display entities or armour stands show up.
+  Custom item models (RP Engine and the like) need their resource pack listed in `camera.textures.extra-packs`.
+- `/phone open <player> photos|gram`, `/phone click <player> <path>` (runs a button, for command blocks and
+  testing), `/phone gram delete <post id>`.
+- Fixed: the lock-screen clock's "2" was blank (its digits are now the pack's own).
+- The language file is version 3 (an older `en.yml` is kept as `en.yml.old-2`).
 
 ## If the phone shows plain dialogs and the camera has no frame
 
@@ -33,36 +67,41 @@ port of its own (8765), which most hosts do not open, so on such a server nobody
 
 ## What was checked, and what was not
 
-Checked on a real 26.3 client against a Paper 26.3 server (screenshots above come from those runs):
+Checked on a real 26.3 client against a Paper 26.3 server, 1.2.0 (screenshots above come from those runs):
 
-- the plugin loads cleanly over a 1.0.0 data folder (config, language file and database are migrated)
-- the pack arrives through the Minecraft port and loads
-- lock screen (set-up), home with app icons and unread badge, contacts, conversation, photo/video result screens;
-  the plain-text versions of the 1.0 screens
-- unread dot on the item; unread count going down and staying down over a restart
-- viewfinder, zoom post effects, the photo matching the framed square, printing, the photo surviving a restart
-- front camera: the photographer as a posed, textured figure (stand-in skin: the test server is offline-mode)
-- video: recording with a panning camera, playing on the held map, frames loaded only while held (0 in the
-  inventory, 24 in the hand, 0 again five seconds after putting it away)
-- textures folder: a custom `phone.png` ends up in the pack and gets its red dot
+- the portrait phone on every screen: lock (set-up), home, contacts, conversation, Photos with a photo and with a
+  video, video playback inside the phone (frames changing), Minestagram account set-up, feed (own and other
+  people's posts, a repost, likes, the tab bar), profile, comments, new post, search, activity; the plain-text
+  feed for a player without the pack
+- the row backgrounds line up with the vanilla buttons, the hover border shows, the home-indicator row closes the
+  phone (GUI scale 2 and 3)
+- the client jar download (SHA-1 checked) and textured photos: blocks and models listed above, stained glass, water,
+  leaves, flowers, fences, slabs, stairs, a chest (map colour), a zombie, skeleton, creeper, pig, a block display, an
+  item display, a text display, a player head on an invisible armour stand, the photographer as a selfie
+- six unit tests: the photo text (every pixel once, the cursor returns), handles, model resolution
+
+Screens were reached with `/phone open` and `/phone click`, which run the same code as the buttons.
 
 **Not checked** (the test client could not be given mouse or keyboard input, and there was only one client):
 
-- clicking any dialog button: entering a passcode, sending, scrolling, editing, deleting, Escape
-- live delivery between two online players, auto-refresh of an open conversation, the notification hint
-- how the sounds sound
-- mouse-wheel zoom, left-click (front camera), F (video) and sneak in the viewfinder; they were driven by command
-- downloaded skins, and every pose except standing (walking, sneaking, swimming, gliding, sleeping, sitting)
-- the FOV fallback zoom, photos and videos in item frames, the crafting recipe, mute/block/rate limit
+- clicking or typing in the dialogs at all: passcode entry, sending, captions, comments, handles, search text
+- two players: likes, comments and reposts from someone else, the activity hint, sharing a photo to someone
+- downloaded skins (the test server is offline-mode: stand-in skin), the second skin layer on a real skin
+- cows, sheep, held items and the arm swing in a photo; text display letters (they were too small to read at that
+  distance); extra packs; custom item models
+- how big the dialog packet of a photo is on a slow connection; many players browsing videos at once
+- everything in the 1.1 list below that is still unchecked: sounds, wheel zoom, F, item frames, the recipe ...
 
-Treat those as untested code until you have clicked through the checklist at the end.
+Still from 1.1 and not re-checked in 1.2: the pack through the Minecraft port, the unread dot on the item, zoom post
+effects, printing to a map and the map surviving a restart.
 
 ## Setup
 
-1. `./gradlew build` (needs a JDK 25 or newer). Output: `build/libs/phone-1.0.0.jar` and `build/pack/phone-pack.zip`
+1. `./gradlew build` (needs a JDK 25 or newer). Output: `build/libs/phone-1.2.0.jar` and `build/pack/phone-pack.zip`
    with its SHA-1 in `build/pack/phone-pack.zip.sha1`.
-2. Put the jar in `plugins/` and start the server. `plugins/Phone/` gets `config.yml`, `lang/en.yml`, `phone.db`,
-   `photos/` and `phone-pack.zip`.
+2. Put the jar in `plugins/` (delete the old Phone jar) and start the server. `plugins/Phone/` gets `config.yml`,
+   `lang/en.yml`, `phone.db`, `photos/` (printed photos), `videos/`, `gallery/` (the Photos app), `minestagram/`
+   (pictures of posts), `cache/` (the client jar for textured photos) and `phone-pack.zip`.
 3. Choose how players get the pack (next section), then `/phone give <player>`.
 
 Only when you change the pack's art or geometry: `python3 tools/gen_pack.py` regenerates textures, the `phone:ui`
@@ -110,14 +149,17 @@ pack, set `item.use-item-model: false` (the phone then looks like its base item 
 | `/phone fov <30-110\|reset>` | `phone.camera` | tell the camera your FOV setting so photos match your screen |
 | `/phone pack` | `phone.use` | send the resource pack again |
 | `/phone ui [auto\|fancy\|plain]` | `phone.use` | show or choose textured / plain-text screens |
-| `/phone open <player> [home\|messages\|camera\|chat <name>]` | `phone.admin` | open a screen for a player, skipping their passcode |
+| `/phone open <player> [home\|messages\|camera\|photos\|gram\|chat <name>]` | `phone.admin` | open a screen for a player, skipping their passcode |
+| `/phone click <player> <path>` | `phone.admin` | run a button (`photos/0`, `gramf/1`, `gramcom/0` ...) as if the player clicked it |
+| `/phone gram delete <post id>` | `phone.gram.moderate` | delete a Minestagram post |
 | `/phone shutter <player> [print\|video\|selfie\|save]` | `phone.admin` | work the camera of a player in the viewfinder |
 | `/phone passcode reset <name>` | `phone.admin` | remove a forgotten passcode |
 | `/phone status` | `phone.admin` | pack delivery, SHA-1, video frames in memory |
 | `/phone mute <name> [minutes]`, `/phone unmute <name>` | `phone.admin` | stop a player from sending |
 | `/phone reload` | `phone.admin` | reload config and language |
 
-`phone.use`, `phone.message`, `phone.camera` default to everyone; `phone.give` and `phone.admin` to operators.
+`phone.use`, `phone.message`, `phone.camera`, `phone.gram` default to everyone; `phone.give`, `phone.gram.moderate`
+(delete any post or comment, no post cooldown) and `phone.admin` to operators.
 
 ## How it works
 
@@ -144,12 +186,27 @@ The code is typed into a dialog text field. Dialogs have no password field, so t
 
 Every screen is one multi-action dialog whose body is a single multi-line text. With the pack, each line is built
 by `ui/Line`: glyphs of the `phone:ui` font (bitmap providers plus a `space` provider with advances of ±1 … ±512)
-are placed at absolute pixel positions, background first, text last. An app icon on the home screen is a glyph in
-the label of an ordinary dialog button: it covers the button's grey face with a dark label pill and stands 34 px
-above the button with the round icon (the client does not clip a label that fits its button). The button's border
-stays and lights up on hover. A speech bubble row is a left cap, tiles of
+are placed at absolute pixel positions, background first, text last. A speech bubble row is a left cap, tiles of
 128/64/…/1 px that add up to the text width, and a right cap; the pieces are white and take the bubble colour from
-the text colour. The panel behind everything is one tall glyph on the first line.
+the text colour. The phone behind the text (bezel, island, status bar, black screen) is one tall glyph on the first
+line; a screen taller than one glyph continues it on line 24.
+
+**Buttons are part of the screen.** The 26.3 client lays dialog buttons out in a grid with 2 px between columns and
+rows, centred under the text, and draws a button's label without clipping it. Every grid here is exactly 148 px wide
+(1, 2, 3 or 5 columns: 148, 73, 48, 28 px buttons), so it lines up with the screen. The label of the first button of
+each row starts with a "band" glyph: the bezel and black screen for the whole row and the 2 px under it, with a
+1 px hole where that button's own border is, so the border still lights up on hover. The other buttons of the row
+cover their grey face with a "cover" glyph. The client cuts the dialog off at the bottom of its last button, so the
+phone's rounded bottom with the home indicator is the label of the last row, a single button that goes Home.
+Rows are filled up with blank buttons. The vanilla title and the exit button (Back / Close, also Escape) stay.
+
+**Photos in the phone.** The `phone:photo` font has one glyph per photo row: a white 1x1 pixel that row r draws r px
+below the top of its text line (a negative ascent; the client only rejects an ascent above the glyph's height, so the
+top rows get a taller cell). A whole picture therefore hangs from one text line, and each pixel takes its colour from
+the text colour. A bitmap glyph advances by its width + 1 = 2 px, so every row is drawn in two passes, even columns,
+then odd. Neighbours of the same colour share one text component: a photo is about 16 000 small components, a few
+hundred kilobytes in the dialog packet before compression. A video plays by sending the screen again for every
+frame (`photos.playback-fps`).
 
 Text is measured on the server with `font/default_widths.tsv` (2 400 characters, generated from the vanilla jar):
 ASCII, Latin-1 including ä ö å, Greek, Cyrillic. Bold is exact (+1 px per character). Characters outside the table
@@ -194,29 +251,61 @@ and edits fire `PhoneMessageEvent` with `isEdit()`.
 
 A server cannot see a client's screen, so the photo is rendered on the server. On the shutter:
 
-1. Main thread, same tick: the eye position and direction, world time and weather, and up to 64 entity boxes are noted.
-2. Main thread, next ticks: the chunks the view can reach are copied as `ChunkSnapshot`s, `chunks-per-tick` (6) at a
-   time, at most `max-chunks` (120). Unloaded chunks are skipped, never loaded.
-3. One background thread: 128×128 rays walk the snapshots voxel by voxel up to `max-distance` (96). Colour is the
-   block's map colour, shaded by face, stored light and time of day; water is looked through with depth tint;
-   glass is transparent; mobs are two-colour boxes; the distance fades into a sky with sun, moon and stars.
-   **Players** are the vanilla player model, six boxes textured from their skin (downloaded once per player, in
-   the background, from the address in their profile), posed from what the server knows: where they look, sneaking,
-   swimming, gliding, sleeping, sitting in a vehicle, an item held up, and a walk cycle while they move.
-4. Main thread: the result screen opens with Print and Retake.
+1. Main thread, same tick: the eye position and direction, world time and weather, and everything visible besides
+   blocks: players and simple mobs as posed, textured models; display entities, held items and worn heads as models
+   with their transformation; other creatures as boxes (at most 64 creatures and 384 props).
+2. Main thread, next ticks: the chunks the view can reach are copied as `ChunkSnapshot`s (with biomes),
+   `chunks-per-tick` (6) at a time, at most `max-chunks` (120). Unloaded chunks are skipped, never loaded.
+3. One background thread: 128×128 rays walk the snapshots voxel by voxel up to `max-distance` (96).
+4. Main thread: the picture is saved to the player's Photos and the Photos app opens on it.
 
-Cost: the main thread only pays for the snapshot copies. The render is at most about 3 million block lookups and
-is queued, so several photographers share one core. A cooldown (5 s) applies per player.
+**With the client assets** (`camera.textures`, on by default): every block is drawn with its real block-state model:
+the ray is tested against the model's boxes (rotated elements too) and the face it enters picks the texel of the
+real texture, tinted like vanilla (grass, foliage and water from the colour maps and the biome's temperature; rain
+comes from a table of biome families). Transparent texels let the ray through (leaves, flowers, panes); partly
+transparent ones (stained glass, ice, water) are blended front to back, and water deepens towards blue. Faces get
+vanilla's directional shading and the stored sky/block light next to them. Far away one photo pixel covers many
+texels, so surfaces fade into their texture's mean colour instead of turning to noise. Blocks the client draws in
+code (chests, signs, beds, banners) keep their map colour.
+
+The assets are the 26.3 client jar, downloaded once from Mojang (`piston-meta` → `client.jar`, SHA-1 checked) into
+`plugins/Phone/cache/` and only read; it is never sent to anyone. `camera.textures.extra-packs` lists resource
+packs (zip or folder) searched first, for custom item models and retextures. Without the jar (no internet,
+`download: false`) photos use block map colours and full cubes, as in 1.1.
+
+**Players** are the vanilla player model with the second skin layer (transparent pixels let the ray through), skins
+downloaded once per player from the address in their profile, posed from what the server knows: where they look,
+sneaking, swimming, gliding, sleeping, sitting in a vehicle, an item held up, an arm swing under way, and a walk cycle
+while they move; the items in both hands are drawn at the hands. **Zombies, husks, drowned, skeletons, strays,
+wither skeletons, bogged, creepers, pigs, cows and sheep** are built the same way from their textures.
+**Display entities** use their block state, item model or text, their transformation, yaw/pitch and billboard;
+**armour stands** show the item on their head at the head pose (player heads with the skin of their profile).
+
+Cost: the main thread only pays for the snapshot copies and the entity list. The render is a few million box tests in
+the worst case and is queued on one thread, so several photographers share one core. A cooldown (5 s) applies per
+player.
 
 Print makes a **filled map**: it shows in hand and in item frames with no client support, and a custom item could
 not show a picture at all. The image is saved as `plugins/Phone/photos/<map id>.png` and indexed in `phone.db`;
 when the server loads the map again the plugin repaints it from the file. Name and lore carry photographer, date
 and (optionally) location. `require-photo-paper` consumes a Photo Paper item outside creative mode; a full
-inventory drops the photo at your feet or refuses, per config.
+inventory drops the photo at your feet or refuses, per config. The picture stays in Photos.
 
 Left-click in the viewfinder switches to the **front camera**: the picture is taken from arm's length in front of
 your face, looking back at you. The viewfinder keeps showing the rear view (the client decides what is on screen;
 press F5 to see roughly what the front camera sees).
+
+### Photos app and Minestagram
+
+Photos keeps rows in the `gallery` table and pictures in `plugins/Phone/gallery/<id>.png|.bin` (the video format of
+printed videos). A full library refuses new pictures with a chat message. Sharing to a contact sends them a message
+and puts a copy in their Photos (unless theirs is full).
+
+Minestagram stores accounts, posts, likes, comments and reposts in `phone.db` (`gram_*` tables); the picture of a
+post is a copy in `plugins/Phone/minestagram/<post id>`, so it outlives the photo in Photos. A repost is a row of
+its own that points at the original; likes and comments always belong to the original. Deleting a post deletes its
+likes, comments and reposts. Authors who are online hear the notification sound and get a hint when someone likes,
+comments on or reposts their post (`minestagram.notify`).
 
 ### Video
 
@@ -248,13 +337,18 @@ maximum length.
 - The dialog title row and its warning icon are vanilla and cannot be removed.
 - Buttons are vanilla widgets. App icons are drawn over them; the other buttons (Send, Scroll, Back ...) keep the
   vanilla look, because a pack can only retexture every button in the game at once.
-- What the server does not know about a player is not in the picture: the exact step of the walk cycle, attack
-  swings, held items, armour, capes and the second skin layer. Mobs are still boxes.
+- What the server does not know about a player is not in the picture: the exact step of the walk cycle and how the
+  client animates an item in use.
 - A video is 128x128 at a few frames per second, blocks do not change in it, and it has no sound.
 - The viewfinder cannot show the front camera's view.
 - The FOV of the client is unknown to the server: photos assume 70 until the player runs `/phone fov`.
-- Photos are block-colour renders, not screenshots: no block textures, no block shapes (stairs and fences are full
-  cubes), flowers are green columns, particles and item frames are missing.
+- Photos are renders, not screenshots: no particles, no clouds, no item frames, no armour, no capes, no entity
+  shadows; blocks the client draws in code (chests, signs, beds, banners, shulker boxes) are map-colour cubes;
+  mobs other than the ones listed are boxes; text displays use the ASCII part of the font only.
+- A photo in a dialog is a big packet (a few hundred kilobytes before compression); a playing video sends one per
+  frame. Lower `photos.playback-fps` or `minestagram.autoplay-videos: false` on a busy server.
+- The client's dialog layout puts all buttons under the text: the like / comment / repost row sits under the
+  caption, not right under the picture as in the real app.
 - Zoom pips show the position among the pack's eight levels, not among the levels chosen in config.
 - Every printed photo uses one map id; ids are a finite, world-wide resource.
 - Player heads of offline players depend on the client being able to resolve the profile.
@@ -289,11 +383,15 @@ maximum length.
 src/main/java/fi/alavesa/phone/
   PhonePlugin            wiring, reload, recipe
   phone/                 PhoneItems, PhoneListener (use, item state), PhoneCommand
-  ui/                    UiController (screens, routing), ScreenRenderer + Fancy/PlainRenderer, Line, Glyphs,
-                         FontWidths, TextWrapper, Views
+  ui/                    UiController (screens, routing, button grids), ScreenRenderer + Fancy/PlainRenderer, Line,
+                         Glyphs, PhotoText (a picture as text), FontWidths, TextWrapper, Views
   messaging/             MessageService, PhoneMessageEvent, RateLimiter, records
-  camera/                CameraService (viewfinder, zoom, photo, video), RayTracer, Scene, Figure (player model),
-                         SkinCache, PhotoStore (photo and video maps)
+  camera/                CameraService (viewfinder, zoom, photo, video), SceneCapture (entities -> scene), RayTracer,
+                         Scene, Figure (players and mobs), Prop (models with a transform), SkinCache, PhotoStore (maps)
+  camera/assets/         AssetSource (client jar download, extra packs), Models (block states, models, items),
+                         Texture, Tints (colour maps)
+  media/                 MediaStore (picture files + cache), Gallery (the Photos app)
+  social/                Gram (Minestagram rules)
   storage/               Database, PlayerSettings (FOV, UI mode, passcode)
   resourcepack/          PackService (build, deliver, who has it), SamePortHttp, PackHttpServer
   config/                PhoneConfig, Lang
@@ -303,8 +401,9 @@ resourcepack/
   assets/phone/items/         phone, phone_unread, phone_camera, photo, photo_paper
   assets/phone/models/item/   phone, phone_unread, photo, photo_paper
   assets/phone/textures/item/ the four 32x32 textures
-  assets/phone/font/ui.json   bubbles, panels, header, app tiles, badges, big clock digits, marks, spaces
-  assets/phone/textures/font/ bubble_{top,mid,bot,one}, panel_<height> (14), header, apps, badges, icons, marks
+  assets/phone/font/ui.json   bubbles, panels, row bands, covers, app icons, marks, ring, clock digits, spaces
+  assets/phone/font/photo.json one 1x1 pixel per photo row (see "Photos in the phone")
+  assets/phone/textures/font/ bubble_*, panel_<h>/panelx_<h> (14 each), bands, band_home, covers, icons, marks, ...
   assets/phone/post_effect/   screen, flash, camera_{1,2,3,4,6,8,12,16}
   assets/phone/shaders/post/  screen.fsh, camera.fsh
   assets/phone/sounds.json, sounds/phone/{notify,send,shutter}.ogg, lang/en_us.json
@@ -316,6 +415,16 @@ The sounds are synthesised placeholders; replace the `.ogg` files with your own 
 ## Testing checklist
 
 Two players, A and B, both with a phone.
+
+- [ ] 1.2: Home shows the app list; Photos, Minestagram open; the phone's bottom edge closes under the last row
+- [ ] Take a photo: Photos opens on it; Back returns to the viewfinder; Prev/Next, Print (map), Delete (twice)
+- [ ] Record a video: it is in Photos; Play plays it in the phone; Save makes a video map
+- [ ] Share → Post to Minestagram: caption, Share; the post is first in the feed; Share → B: B gets a message and the copy in Photos
+- [ ] Minestagram first open: account set-up; a taken handle and "ab" are refused
+- [ ] B likes, comments on and reposts A's post: A hears it and sees it in Activity; counts change; A deletes B's comment
+- [ ] Delete your own post (press the bin twice); a moderator deletes someone else's with /phone gram delete
+- [ ] Search finds accounts; tapping one opens their profile; the profile tab on your own profile edits it
+- [ ] A photo of a varied scene: textures, plants, glass, water, mobs, display entities, a ragdoll, someone holding a sword
 
 - [ ] Pack prompt appears on join; after accepting, the phone item shows its texture
 - [ ] `/phone ui` says "textured"; if not, the console says why the pack did not load

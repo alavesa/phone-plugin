@@ -3,26 +3,26 @@
   {
    "type": "space",
    "advances": {
-    "\ue061": 1,
-    "\ue062": 2,
-    "\ue063": 4,
-    "\ue064": 8,
-    "\ue065": 16,
-    "\ue066": 32,
-    "\ue067": 64,
-    "\ue068": 128,
-    "\ue069": 256,
-    "\ue06a": 512,
-    "\ue06b": -1,
-    "\ue06c": -2,
-    "\ue06d": -4,
-    "\ue06e": -8,
-    "\ue06f": -16,
-    "\ue070": -32,
-    "\ue071": -64,
-    "\ue072": -128,
-    "\ue073": -256,
-    "\ue074": -512
+    "\ue07d": 1,
+    "\ue07e": 2,
+    "\ue07f": 4,
+    "\ue080": 8,
+    "\ue081": 16,
+    "\ue082": 32,
+    "\ue083": 64,
+    "\ue084": 128,
+    "\ue085": 256,
+    "\ue086": 512,
+    "\ue087": -1,
+    "\ue088": -2,
+    "\ue089": -4,
+    "\ue08a": -8,
+    "\ue08b": -16,
+    "\ue08c": -32,
+    "\ue08d": -64,
+    "\ue08e": -128,
+    "\ue08f": -256,
+    "\ue090": -512
    }
   },
   {
@@ -72,11 +72,29 @@
   },
   {
    "type": "bitmap",
+   "file": "phone:font/panelx_48.png",
+   "height": 48,
+   "ascent": 7,
+   "chars": [
+    "\ue02d"
+   ]
+  },
+  {
+   "type": "bitmap",
    "file": "phone:font/panel_64.png",
    "height": 64,
    "ascent": 11,
    "chars": [
-    "\ue02d"
+    "\ue02e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_64.png",
+   "height": 64,
+   "ascent": 7,
+   "chars": [
+    "\ue02f"
    ]
   },
   {
@@ -85,7 +103,16 @@
    "height": 80,
    "ascent": 11,
    "chars": [
-    "\ue02e"
+    "\ue030"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_80.png",
+   "height": 80,
+   "ascent": 7,
+   "chars": [
+    "\ue031"
    ]
   },
   {
@@ -94,7 +121,16 @@
    "height": 96,
    "ascent": 11,
    "chars": [
-    "\ue02f"
+    "\ue032"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_96.png",
+   "height": 96,
+   "ascent": 7,
+   "chars": [
+    "\ue033"
    ]
   },
   {
@@ -103,7 +139,16 @@
    "height": 112,
    "ascent": 11,
    "chars": [
-    "\ue030"
+    "\ue034"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_112.png",
+   "height": 112,
+   "ascent": 7,
+   "chars": [
+    "\ue035"
    ]
   },
   {
@@ -112,7 +157,16 @@
    "height": 128,
    "ascent": 11,
    "chars": [
-    "\ue031"
+    "\ue036"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_128.png",
+   "height": 128,
+   "ascent": 7,
+   "chars": [
+    "\ue037"
    ]
   },
   {
@@ -121,7 +175,16 @@
    "height": 144,
    "ascent": 11,
    "chars": [
-    "\ue032"
+    "\ue038"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_144.png",
+   "height": 144,
+   "ascent": 7,
+   "chars": [
+    "\ue039"
    ]
   },
   {
@@ -130,7 +193,16 @@
    "height": 160,
    "ascent": 11,
    "chars": [
-    "\ue033"
+    "\ue03a"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_160.png",
+   "height": 160,
+   "ascent": 7,
+   "chars": [
+    "\ue03b"
    ]
   },
   {
@@ -139,7 +211,16 @@
    "height": 176,
    "ascent": 11,
    "chars": [
-    "\ue034"
+    "\ue03c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_176.png",
+   "height": 176,
+   "ascent": 7,
+   "chars": [
+    "\ue03d"
    ]
   },
   {
@@ -148,7 +229,16 @@
    "height": 192,
    "ascent": 11,
    "chars": [
-    "\ue035"
+    "\ue03e"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_192.png",
+   "height": 192,
+   "ascent": 7,
+   "chars": [
+    "\ue03f"
    ]
   },
   {
@@ -157,7 +247,16 @@
    "height": 208,
    "ascent": 11,
    "chars": [
-    "\ue036"
+    "\ue040"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_208.png",
+   "height": 208,
+   "ascent": 7,
+   "chars": [
+    "\ue041"
    ]
   },
   {
@@ -166,7 +265,16 @@
    "height": 224,
    "ascent": 11,
    "chars": [
-    "\ue037"
+    "\ue042"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_224.png",
+   "height": 224,
+   "ascent": 7,
+   "chars": [
+    "\ue043"
    ]
   },
   {
@@ -175,7 +283,16 @@
    "height": 240,
    "ascent": 11,
    "chars": [
-    "\ue038"
+    "\ue044"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/panelx_240.png",
+   "height": 240,
+   "ascent": 7,
+   "chars": [
+    "\ue045"
    ]
   },
   {
@@ -184,16 +301,43 @@
    "height": 255,
    "ascent": 11,
    "chars": [
-    "\ue039"
+    "\ue046"
    ]
   },
   {
    "type": "bitmap",
-   "file": "phone:font/header.png",
-   "height": 13,
-   "ascent": 9,
+   "file": "phone:font/panelx_255.png",
+   "height": 255,
+   "ascent": 7,
    "chars": [
-    "\ue03a"
+    "\ue047"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/bands.png",
+   "height": 22,
+   "ascent": 13,
+   "chars": [
+    "\ue048\ue049\ue04a\ue04b"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/band_home.png",
+   "height": 20,
+   "ascent": 13,
+   "chars": [
+    "\ue04c"
+   ]
+  },
+  {
+   "type": "bitmap",
+   "file": "phone:font/covers.png",
+   "height": 18,
+   "ascent": 12,
+   "chars": [
+    "\ue04d\ue04e\ue04f\ue050"
    ]
   },
   {
@@ -202,7 +346,7 @@
    "height": 16,
    "ascent": 11,
    "chars": [
-    "\ue03b\ue03c\ue03d"
+    "\ue051\ue052\ue053\ue054\ue055"
    ]
   },
   {
@@ -211,49 +355,34 @@
    "height": 8,
    "ascent": 7,
    "chars": [
-    "\ue03e\ue03f\ue040\ue041\ue042\ue043\ue044\ue045\ue046\ue047\ue048"
+    "\ue056\ue057\ue058\ue059\ue05a\ue05b\ue05c\ue05d\ue05e\ue05f\ue060\ue061\ue062\ue063\ue064\ue065\ue066\ue067\ue068\ue069\ue06a\ue06b\ue06c\ue06d\ue06e\ue06f"
    ]
   },
   {
    "type": "bitmap",
-   "file": "phone:font/apps.png",
-   "height": 53,
-   "ascent": 47,
+   "file": "phone:font/ring.png",
+   "height": 12,
+   "ascent": 9,
    "chars": [
-    "\ue049\ue04a\ue04b"
+    "\ue070"
    ]
   },
   {
    "type": "bitmap",
-   "file": "phone:font/badges.png",
-   "height": 49,
-   "ascent": 49,
+   "file": "phone:font/photo_frame.png",
+   "height": 130,
+   "ascent": 8,
    "chars": [
-    "\ue04c\ue04d\ue04e\ue04f\ue050\ue051\ue052\ue053\ue054\ue055"
+    "\ue071"
    ]
   },
   {
    "type": "bitmap",
-   "file": "minecraft:font/ascii.png",
+   "file": "phone:font/big_digits.png",
    "height": 24,
    "ascent": 21,
    "chars": [
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\ue056\ue057\ue058\ue059\ue05a\ue05b\ue05c\ue05d\ue05e\ue05f\ue060\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
-    "\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+    "\ue072\ue073\ue074\ue075\ue076\ue077\ue078\ue079\ue07a\ue07b\ue07c"
    ]
   }
  ]

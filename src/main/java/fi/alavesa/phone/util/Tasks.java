@@ -11,12 +11,16 @@ public final class Tasks {
     private Tasks() {}
 
     /**
-     * Runs {@code onMain} on the main thread with the result of {@code future}. A failed future is dropped (the
-     * producer has logged it); nothing runs after the plugin was disabled.
+     * Runs {@code onMain} on the main thread with the result of {@code future}. A failed future is logged and dropped;
+     * nothing runs after the plugin was disabled.
      */
     public static <T> void onMain(Plugin plugin, CompletableFuture<T> future, Consumer<T> onMain) {
         future.whenComplete((value, error) -> {
-            if (error != null || !plugin.isEnabled()) return;
+            if (!plugin.isEnabled()) return;
+            if (error != null) {
+                plugin.getLogger().log(java.util.logging.Level.WARNING, "A phone task failed", error);
+                return;
+            }
             if (Bukkit.isPrimaryThread()) onMain.accept(value);
             else Bukkit.getScheduler().runTask(plugin, () -> onMain.accept(value));
         });
