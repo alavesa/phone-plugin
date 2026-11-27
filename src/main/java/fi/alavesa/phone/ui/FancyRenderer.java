@@ -24,18 +24,18 @@ import net.kyori.adventure.text.format.TextColor;
 public final class FancyRenderer implements ScreenRenderer {
 
     private static final TextColor WHITE = TextColor.color(0xFFFFFF);
-    private static final TextColor META = TextColor.color(0x8E8E93);
-    private static final TextColor DIM = TextColor.color(0xC7C7CC);
-    private static final TextColor ACCENT = TextColor.color(0xF050C8);
+    private static final TextColor META = TextColor.color(0xB4B4BC);
+    private static final TextColor DIM = TextColor.color(0xE4E4EA);
+    private static final TextColor ACCENT = TextColor.color(0xFF6FD8);
     private static final TextColor LIKED = TextColor.color(0xFF3B6B);
     private static final TextColor PRINT = TextColor.color(0x50E6F0);
-    private static final TextColor DANGER = TextColor.color(0xFF4D4D);
-    private static final TextColor OUT_BUBBLE = TextColor.color(0xB83DBA);
+    private static final TextColor DANGER = TextColor.color(0xFF6B6B);
+    private static final TextColor OUT_BUBBLE = TextColor.color(0x8E2A9A);
     private static final TextColor OUT_TEXT = TextColor.color(0xFFFFFF);
-    private static final TextColor IN_BUBBLE = TextColor.color(0x2C2C30);
-    private static final TextColor IN_TEXT = TextColor.color(0xF2F2F7);
+    private static final TextColor IN_BUBBLE = TextColor.color(0x3C3C44);
+    private static final TextColor IN_TEXT = TextColor.color(0xFFFFFF);
     private static final TextColor ONLINE = TextColor.color(0x34C759);
-    private static final TextColor ALERT = TextColor.color(0xFF453A);
+    private static final TextColor ALERT = TextColor.color(0xFF6A5E);
     private static final TextColor READ = TextColor.color(0x5AC8FA);
     private static final TextColor RING = TextColor.color(0xE0408A);
 
@@ -52,6 +52,8 @@ public final class FancyRenderer implements ScreenRenderer {
     private static final int BUBBLE_FREE = 30;
     /** Text lines a photo takes (128 px hang from the first one). */
     private static final int PHOTO_LINES = 15;
+    /** Text lines a picture in a conversation takes (a 64 px thumbnail). */
+    private static final int THUMB_LINES = 8;
 
     private final Glyphs g;
     private final FontWidths fw;
@@ -276,9 +278,9 @@ public final class FancyRenderer implements ScreenRenderer {
     // ---- conversation -----------------------------------------------------------------------------------------------
 
     @Override
-    public int messageLines(String body) {
-        // the bubble rows plus the line with name / time above it
-        return TextWrapper.wrap(fw, body, bubbleTextWidth).size() + 1;
+    public int messageLines(String body, boolean photo) {
+        // the bubble rows plus the line with name / time above it, plus the picture
+        return TextWrapper.wrap(fw, body, bubbleTextWidth).size() + 1 + (photo ? THUMB_LINES : 0);
     }
 
     @Override
@@ -299,10 +301,21 @@ public final class FancyRenderer implements ScreenRenderer {
         }
         for (Views.Bubble b : v.messages()) {
             rest.add(meta(v.partnerId(), v.partnerName(), b));
+            if (b.photo()) thumbnail(rest, b);
             bubble(rest, TextWrapper.wrap(fw, b.body(), bubbleTextWidth), b.outgoing());
         }
         if (v.hasNewer()) rest.add(line().glyph(2, "mark.down", META).centred(lang.plain("ui.conversation.newer-below"), META, false));
         return screen(v.clock(), rest, inputsPx);
+    }
+
+    /** A picture sent in a message: a small copy on the sender's side, hanging from one line over the lines it covers. */
+    private void thumbnail(List<Line> out, Views.Bubble b) {
+        int x = b.outgoing() ? g.contentWidth - g.tailWidth - Thumb.SIZE : g.tailWidth;
+        Line l = line();
+        if (b.thumb() != null) l.photo(x, photoText.build(b.thumb(), Thumb.SIZE));
+        else l.glyph(x + (Thumb.SIZE - 8) / 2, "mark.image", META).text(x, fw.ellipsize(lang.plain("ui.conversation.photo-gone"), Thumb.SIZE, false), META, false);
+        out.add(l);
+        for (int i = 1; i < THUMB_LINES; i++) out.add(line());
     }
 
     /** The small line above a bubble: head, name and time for incoming, time and read mark for outgoing. */

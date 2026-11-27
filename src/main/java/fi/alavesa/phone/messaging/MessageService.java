@@ -1,14 +1,17 @@
 package fi.alavesa.phone.messaging;
 
 import fi.alavesa.phone.config.PhoneConfig;
+import fi.alavesa.phone.media.MediaStore;
 import fi.alavesa.phone.storage.Database;
 import fi.alavesa.phone.ui.TextWrapper;
 import fi.alavesa.phone.util.Tasks;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -45,6 +48,7 @@ public final class MessageService {
     private final Plugin plugin;
     private final Database db;
     private PhoneConfig cfg;
+    private MediaStore attachments;
     private Notifier notifier;
     private RateLimiter limiter;
     private final Map<UUID, Integer> unread = new HashMap<>();
@@ -141,6 +145,20 @@ public final class MessageService {
      * {@link SendResult#OK} the message is already stored and the recipient (if online) notified.
      */
     public void send(Player sender, UUID recipientId, String recipientName, String typed, Consumer<SendResult> done) {
+        send(sender, recipientId, recipientName, typed, null, done);
+    }
+
+    /** The files of attached pictures (plugins/Phone/attachments); set once at start. */
+    public void setAttachments(MediaStore attachments) {
+        this.attachments = attachments;
+    }
+
+    public CompletableFuture<MediaStore.Media> attachment(long messageId) {
+        return attachments == null ? CompletableFuture.completedFuture(null) : attachments.read(messageId);
+    }
+
+    /** Same, with a picture ({@code poster}, 128x128 pixels) attached to the message. */
+    public void send(Player sender, UUID recipientId, String recipientName, String typed, int[] poster, Consumer<SendResult> done) {
         UUID senderId = sender.getUniqueId();
         if (!sender.hasPermission("phone.message")) {
             done.accept(SendResult.NO_PERMISSION);
@@ -181,21 +199,23 @@ public final class MessageService {
         // the recipient's block list is in memory while they are online, in the database otherwise
         if (blocks.containsKey(recipientId)) {
             if (hasBlocked(recipientId, senderId)) done.accept(SendResult.BLOCKED);
-            else store(sender, recipientId, finalBody, done);
+            else store(sender, recipientId, finalBody, poster, done);
         } else {
             db.isBlocked(recipientId, senderId).whenComplete((blocked, error) -> Bukkit.getScheduler().runTask(plugin, () -> {
                 if (error != null) done.accept(SendResult.ERROR);
                 else if (blocked) done.accept(SendResult.BLOCKED);
-                else store(sender, recipientId, finalBody, done);
+                else store(sender, recipientId, finalBody, poster, done);
             }));
         }
     }
 
-    private void store(Player sender, UUID recipientId, String body, Consumer<SendResult> done) {
+    private void store(Player sender, UUID recipientId, String body, int[] poster, Consumer<SendResult> done) {
         long now = System.currentTimeMillis();
         UUID senderId = sender.getUniqueId();
         String senderName = sender.getName();
-        db.insertMessage(senderId, recipientId, body, now).whenComplete((id, error) -> {
+        boolean photo = poster != null && attachments != null;
+        db.insertMessage(senderId, recipientId, body, now, photo).thenCompose(id -> id >= 0 && photo
+                ? attachments.write(id, new MediaStore.Media(List.of(poster), 1)).thenApply(v -> id) : CompletableFuture.completedFuture(id)).whenComplete((id, error) -> {
             if (!plugin.isEnabled()) return;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (error != null) {
@@ -207,7 +227,7 @@ public final class MessageService {
                     // offline recipients need nothing here: the row waits unread and join() announces it
                     unread.merge(recipientId, 1, Integer::sum);
                     notifier.unreadChanged(recipient);
-                    notifier.incoming(recipient, new Message(id, senderId, recipientId, body, now, false, false), senderName);
+                    notifier.incoming(recipient, new Message(id, senderId, recipientId, body, now, false, false, photo), senderName);
                 }
                 done.accept(SendResult.OK);
             });
@@ -278,6 +298,7 @@ public final class MessageService {
                 return;
             }
             Tasks.onMain(plugin, db.deleteMessage(id, player.getUniqueId()), removed -> {
+                if (removed && message.photo() && attachments != null) attachments.delete(id);
                 if (removed) touched(player.getUniqueId(), message.recipient());
                 done.accept(removed ? SendResult.OK : SendResult.NOT_YOURS);
             });

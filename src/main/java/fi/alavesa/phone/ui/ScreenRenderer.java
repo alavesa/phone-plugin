@@ -74,5 +74,5 @@ public interface ScreenRenderer {
     Component activityButton(UUID who, String icon, String text, String age, boolean first);
 
     /** Text lines one message takes on the conversation screen (for scrolling). */
-    int messageLines(String body);
+    int messageLines(String body, boolean photo);
 }

@@ -484,6 +484,8 @@ def small_glyphs():
     left = grid(["........", "....#...", "...#....", "..#.....", "...#....", "....#...", "........", "........"])
     right = grid(["........", "..#.....", "...#....", "....#...", "...#....", "..#.....", "........", "........"])
     play = grid(["........", ".#......", ".###....", ".#####..", ".###....", ".#......", "........", "........"])
+    pause = grid(["........", ".##.##..", ".##.##..", ".##.##..", ".##.##..", ".##.##..", "........", "........"])
+    filt = grid(["#.#.#...", "#.#.#...", "#.#.#...", "#####...", ".###....", "..#.....", "..#.....", "........"])
     image = grid(["#######.", "#.....#.", "#.##..#.", "#.....#.", "#..#..#.", "#.###.#.", "#######.", "........"])
     share = grid(["...#....", "..###...", ".#.#.#..", "...#....", "#..#..#.", "#.....#.", "#######.", "........"])
     printer = grid(["..###...", "..#.#...", "#######.", "#.....#.", "#.###.#.", "..#.#...", "..###...", "........"])
@@ -492,7 +494,7 @@ def small_glyphs():
             ("mark.clock", clock), ("mark.up", up), ("mark.down", down), ("mark.lock", lock), ("mark.pencil", pencil),
             ("mark.rec", rec), ("mark.heart", heart), ("mark.heart_full", heart_full), ("mark.comment", comment),
             ("mark.repost", repost), ("mark.home", home), ("mark.search", search), ("mark.plus", plus),
-            ("mark.profile", profile), ("mark.left", left), ("mark.right", right), ("mark.play", play),
+            ("mark.profile", profile), ("mark.left", left), ("mark.right", right), ("mark.play", play), ("mark.pause", pause), ("mark.filter", filt),
             ("mark.image", image), ("mark.share", share), ("mark.print", printer), ("mark.trash", trash)]
 
 

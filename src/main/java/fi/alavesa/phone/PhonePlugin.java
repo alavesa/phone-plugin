@@ -50,6 +50,7 @@ public final class PhonePlugin extends JavaPlugin {
     private CameraService camera;
     private MediaStore galleryFiles;
     private MediaStore gramFiles;
+    private MediaStore attachmentFiles;
     private Gallery gallery;
     private Gram gram;
     private UiController ui;
@@ -100,6 +101,8 @@ public final class PhonePlugin extends JavaPlugin {
         SkinCache skins = new SkinCache(this, cfg.playerSkins);
         galleryFiles = new MediaStore(getLogger(), new File(getDataFolder(), "gallery"));
         gramFiles = new MediaStore(getLogger(), new File(getDataFolder(), "minestagram"));
+        attachmentFiles = new MediaStore(getLogger(), new File(getDataFolder(), "attachments"));
+        messages.setAttachments(attachmentFiles);
         gallery = new Gallery(database, galleryFiles, cfg.photosLimit);
         gram = new Gram(this, database, gallery, gramFiles, messages, cfg);
         camera = new CameraService(this, settings, skins, items, pack, postFx, sounds, photos, gallery, cfg, lang);
@@ -132,6 +135,7 @@ public final class PhonePlugin extends JavaPlugin {
         if (database != null) database.close();
         if (galleryFiles != null) galleryFiles.shutdown();
         if (gramFiles != null) gramFiles.shutdown();
+        if (attachmentFiles != null) attachmentFiles.shutdown();
     }
 
     /** /phone reload: config.yml and the language file. The pack host and the database keep running as they are. */

@@ -36,7 +36,8 @@ public final class Views {
 
     public record Contacts(String clock, List<Contact> page, int pageIndex, int pageCount, String filter, int totalUnread) {}
 
-    public record Bubble(String body, boolean outgoing, String time, boolean read, boolean edited) {}
+    /** @param photo a picture is attached; {@code thumb} its {@link Thumb#SIZE} x {@link Thumb#SIZE} pixels, null when the file is gone */
+    public record Bubble(String body, boolean outgoing, String time, boolean read, boolean edited, boolean photo, int[] thumb) {}
 
     public record Conversation(String clock, UUID partnerId, String partnerName, boolean online, List<Bubble> messages,
                                boolean hasOlder, boolean hasNewer, boolean blocked, String notice) {}

@@ -69,6 +69,7 @@ public final class Database {
                         + "photographer_name TEXT NOT NULL, taken_at INTEGER NOT NULL, world TEXT, x INTEGER, y INTEGER, z INTEGER)");
                 // columns added after 1.0.0; SQLite has no "ADD COLUMN IF NOT EXISTS"
                 addColumn(st, "messages", "edited INTEGER NOT NULL DEFAULT 0");
+                addColumn(st, "messages", "photo INTEGER NOT NULL DEFAULT 0");   // 1.3: a picture attached to the message
                 addColumn(st, "players", "ui TEXT");
                 addColumn(st, "players", "pass_hash TEXT");
                 addColumn(st, "players", "pass_salt TEXT");
@@ -140,14 +141,15 @@ public final class Database {
 
     // ---- messages ---------------------------------------------------------------------------------------------------
 
-    public CompletableFuture<Long> insertMessage(UUID sender, UUID recipient, String body, long sentAt) {
+    public CompletableFuture<Long> insertMessage(UUID sender, UUID recipient, String body, long sentAt, boolean photo) {
         return async("insert message", () -> {
-            try (PreparedStatement ps = db.prepareStatement("INSERT INTO messages (sender, recipient, body, sent_at) VALUES (?, ?, ?, ?)",
+            try (PreparedStatement ps = db.prepareStatement("INSERT INTO messages (sender, recipient, body, sent_at, photo) VALUES (?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, sender.toString());
                 ps.setString(2, recipient.toString());
                 ps.setString(3, body);
                 ps.setLong(4, sentAt);
+                ps.setInt(5, photo ? 1 : 0);
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
                     return rs.next() ? rs.getLong(1) : -1L;
@@ -158,7 +160,7 @@ public final class Database {
 
     private static Message message(ResultSet rs) throws SQLException {
         return new Message(rs.getLong("id"), UUID.fromString(rs.getString("sender")), UUID.fromString(rs.getString("recipient")),
-                rs.getString("body"), rs.getLong("sent_at"), rs.getInt("read") != 0, rs.getInt("edited") != 0);
+                rs.getString("body"), rs.getLong("sent_at"), rs.getInt("read") != 0, rs.getInt("edited") != 0, rs.getInt("photo") != 0);
     }
 
     private static final String PAIR = "((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))";
@@ -189,7 +191,7 @@ public final class Database {
      * @param lineBudget at most this many text lines, measured with {@code lines} (always at least one message)
      */
     public CompletableFuture<ConversationPage> loadPage(UUID viewer, UUID partner, int skip, int maxCount, int lineBudget,
-                                                        ToIntFunction<String> lines) {
+                                                        ToIntFunction<Message> lines) {
         return async("load conversation", () -> {
             List<Message> picked = new ArrayList<>();
             try (PreparedStatement ps = db.prepareStatement("SELECT * FROM messages WHERE " + PAIR + " ORDER BY id DESC LIMIT ? OFFSET ?")) {
@@ -201,7 +203,7 @@ public final class Database {
                     // newest first: keep taking older ones until the window is full
                     while (rs.next()) {
                         Message m = message(rs);
-                        int need = lines.applyAsInt(m.body());
+                        int need = lines.applyAsInt(m);
                         if (!picked.isEmpty() && used + need > lineBudget) break;
                         picked.add(m);
                         used += need;

@@ -34,7 +34,11 @@ public final class PhotoText {
      * @param rgb size*size pixels 0xRRGGBB, row by row; null draws a dark placeholder
      */
     public Component build(int[] rgb) {
-        int size = glyphs.photoSize;
+        return build(rgb, glyphs.photoSize);
+    }
+
+    /** A smaller picture: {@code size} x {@code size} pixels (at most the font's row count), one screen pixel each. */
+    public Component build(int[] rgb, int size) {
         Style pixelStyle = Style.style().font(Glyphs.PHOTO_FONT).shadowColor(ShadowColor.none()).build();
         Style spaceStyle = Style.style().font(Glyphs.FONT).color(NamedTextColor.WHITE).shadowColor(ShadowColor.none()).build();
         String back1 = glyphs.space(-(size - 1));       // from the end of the even pass to column 1

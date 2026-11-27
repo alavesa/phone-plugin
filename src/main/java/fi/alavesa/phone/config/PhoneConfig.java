@@ -80,6 +80,8 @@ public final class PhoneConfig {
     public final boolean texturesDownload;
     public final List<String> texturesExtraPacks;
     public final boolean videoEnabled;
+    /** The Q key cycles camera filters. */
+    public final boolean filters;
     public final int videoFps;
     public final int videoMaxSeconds;
     public final int videoMaxDistance;
@@ -193,6 +195,7 @@ public final class PhoneConfig {
         texturesDownload = c.getBoolean("camera.textures.download", true);
         texturesExtraPacks = List.copyOf(c.getStringList("camera.textures.extra-packs"));
         videoEnabled = c.getBoolean("camera.video.enabled", true);
+        filters = c.getBoolean("camera.filters", true);
         videoFps = clamp(c.getInt("camera.video.fps", 4), 1, 10);
         videoMaxSeconds = clamp(c.getInt("camera.video.max-seconds", 6), 1, 30);
         videoMaxDistance = clamp(c.getInt("camera.video.max-distance", 48), 16, 128);
@@ -206,7 +209,7 @@ public final class PhoneConfig {
         gramBioLength = clamp(c.getInt("minestagram.bio-length", 60), 1, 200);
         gramCommentsPerMinute = clamp(c.getInt("minestagram.comments-per-minute", 6), 1, 1000);
         gramPostCooldownSeconds = clamp(c.getInt("minestagram.post-cooldown-seconds", 30), 0, 86_400);
-        gramAutoplay = c.getBoolean("minestagram.autoplay-videos", true);
+        gramAutoplay = c.getBoolean("minestagram.autoplay", false);
         gramNotify = c.getBoolean("minestagram.notify", true);
 
         packSendOnJoin = c.getBoolean("resource-pack.send-on-join", true);

@@ -97,7 +97,8 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         boolean sending;
         long shownTick;
         BukkitTask refresh;
-        BukkitTask playback;
+        /** The video being shown (playing or paused) on the current screen; null when no video is on it. */
+        Playback pb;
         final Map<UUID, String> drafts = new HashMap<>();
         // Photos
         int photoIndex;
@@ -114,6 +115,24 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         String gramQuery = "";
         long confirmPostDelete = -1;
         Runnable gramBack;
+    }
+
+    /**
+     * A video on a screen: one dialog per frame while it plays; paused it is just the frame it stopped on, so the dialog
+     * (and its scroll position) stays put. {@code buttons} builds the button grid for the playing / paused state.
+     */
+    private static final class Playback {
+        BukkitTask task;
+        MediaStore.Media media;
+        /** The frame to send next / the frame on screen. */
+        int at, shown;
+        int step, interval;
+        java.util.function.Function<int[], Component> render;
+        java.util.function.Function<Boolean, List<ActionButton>> buttons;
+        Screen screen;
+        String exitLabel, exitPath;
+        ScreenRenderer r;
+        boolean paused = true;
     }
 
     private static final Key SCREEN_FX = Key.key("phone", "screen");
@@ -308,10 +327,74 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
     }
 
     private void stopPlayback(Session s) {
-        if (s.playback != null) {
-            s.playback.cancel();
-            s.playback = null;
-        }
+        if (s.pb != null && s.pb.task != null) s.pb.task.cancel();
+        s.pb = null;
+    }
+
+    private void sendFrame(Player player, Session s, Playback pb, int index) {
+        pb.shown = index;
+        showFrame(player, s, pb.screen, pb.render.apply(pb.media.frames().get(index)), List.of(), pb.buttons.apply(pb.paused), pb.exitLabel,
+                pb.exitPath, pb.r);
+    }
+
+    /** Plays from {@code pb.at}; at the end it stops on the first frame, paused. */
+    private void runPlayback(Player player, Session s, Playback pb) {
+        if (pb.task != null) pb.task.cancel();
+        pb.paused = false;
+        int frames = pb.media.frames().size();
+        pb.task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline() || s.pb != pb) {
+                if (pb.task != null) pb.task.cancel();
+                return;
+            }
+            if (pb.at >= frames) {
+                pb.task.cancel();
+                pb.task = null;
+                pb.paused = true;
+                pb.at = 0;
+                sendFrame(player, s, pb, 0);
+                return;
+            }
+            int i = pb.at;
+            pb.at = i + pb.step;
+            sendFrame(player, s, pb, i);
+        }, 0L, pb.interval);
+    }
+
+    /** Pause button: stops on the frame that is on screen; the dialog is sent once more with the Play button. */
+    private void pausePlayback(Player player, Session s) {
+        Playback pb = s.pb;
+        if (pb == null || pb.paused) return;
+        if (pb.task != null) pb.task.cancel();
+        pb.task = null;
+        pb.paused = true;
+        pb.at = pb.shown;
+        sendFrame(player, s, pb, pb.shown);
+    }
+
+    /** Play button: carries on from the frame it stopped on (or from the start when it had ended). */
+    private void resumePlayback(Player player, Session s) {
+        Playback pb = s.pb;
+        if (pb == null || !pb.paused) return;
+        runPlayback(player, s, pb);
+    }
+
+    /** Sets a video up on the current screen, paused on its first frame; {@code autoplay} starts it at once. */
+    private Playback newPlayback(Player player, Session s, MediaStore.Media media, Screen screen, String exitLabel, String exitPath,
+                                 ScreenRenderer r, java.util.function.Function<int[], Component> render,
+                                 java.util.function.Function<Boolean, List<ActionButton>> buttons) {
+        Playback pb = new Playback();
+        pb.media = media;
+        pb.step = Math.max(1, Math.round(media.frames().size() / (float) (media.seconds() * cfg.playbackFps)));
+        pb.interval = Math.max(1, 20 / cfg.playbackFps);
+        pb.render = render;
+        pb.buttons = buttons;
+        pb.screen = screen;
+        pb.exitLabel = exitLabel;
+        pb.exitPath = exitPath;
+        pb.r = r;
+        s.pb = pb;
+        return pb;
     }
 
     /** Closes whatever phone screen is open; the phone is locked again. {@code closeDialog}: also tell the client. */
@@ -570,7 +653,7 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         Player online = Bukkit.getPlayer(partner);
         CompletableFuture<String> name = online != null ? CompletableFuture.completedFuture(online.getName()) : db.playerName(partner);
         CompletableFuture<ConversationPage> page = db.loadPage(player.getUniqueId(), partner, Math.max(0, skip), cfg.messagesPerPage,
-                cfg.maxLinesPerPage, r::messageLines);
+                cfg.maxLinesPerPage, m -> r.messageLines(m.body(), m.photo()));
         Tasks.onMain(plugin, page.thenCombine(name, (p, n) -> Map.entry(p, n == null ? lang.plain("ui.contacts.unknown") : n)), result -> {
             if (!player.isOnline()) return;
             ConversationPage loaded = result.getKey();
@@ -583,22 +666,42 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             s.partner = partner;
             s.partnerName = result.getValue();
             s.skip = Math.max(0, skip);
-            showConversation(player, s, r, loaded);
+            // pictures sent in messages: their thumbnails are read from disk before the screen is drawn
+            Map<Long, CompletableFuture<MediaStore.Media>> files = new HashMap<>();
+            for (Message m : loaded.messages()) if (m.photo()) files.put(m.id(), messages.attachment(m.id()));
+            if (files.isEmpty()) {
+                showConversation(player, s, r, loaded, Map.of());
+                return;
+            }
+            Tasks.onMain(plugin, CompletableFuture.allOf(files.values().toArray(CompletableFuture[]::new)).thenApply(v -> {
+                Map<Long, int[]> thumbs = new HashMap<>();
+                files.forEach((id, f) -> {
+                    MediaStore.Media media = f.join();
+                    if (media != null) thumbs.put(id, Thumb.of(media.poster()));
+                });
+                return thumbs;
+            }), thumbs -> {
+                if (player.isOnline() && s.screen != Screen.NONE && partner.equals(s.partner)) showConversation(player, s, r, loaded, thumbs);
+            });
         });
     }
 
     private Views.Bubble bubble(UUID me, Message m) {
-        return new Views.Bubble(m.body(), m.sender().equals(me), stamp(m.sentAt()), m.read(), m.edited());
+        return bubble(me, m, null);
     }
 
-    private void showConversation(Player player, Session s, ScreenRenderer r, ConversationPage page) {
+    private Views.Bubble bubble(UUID me, Message m, int[] thumb) {
+        return new Views.Bubble(m.body(), m.sender().equals(me), stamp(m.sentAt()), m.read(), m.edited(), m.photo(), thumb);
+    }
+
+    private void showConversation(Player player, Session s, ScreenRenderer r, ConversationPage page, Map<Long, int[]> thumbs) {
         UUID me = player.getUniqueId();
         UUID partner = s.partner;
         Player other = Bukkit.getPlayer(partner);
         boolean online = other != null && player.canSee(other);
         boolean blocked = messages.hasBlocked(me, partner);
         List<Views.Bubble> bubbles = new ArrayList<>();
-        for (Message m : page.messages()) bubbles.add(bubble(me, m));
+        for (Message m : page.messages()) bubbles.add(bubble(me, m, thumbs.get(m.id())));
         String notice = s.notice;
         s.notice = "";
 
@@ -790,7 +893,7 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         show(player, s, Screen.PHOTOS, body, List.of(), grid, back ? "ui.button.camera" : "ui.button.back", back ? "camback" : "home");
     }
 
-    /** Plays a video inside the Photos screen: the screen is sent again for every frame, once through. */
+    /** Plays a video inside the Photos screen: the screen is sent again for every frame, with Pause and Play to hold it. */
     private void playPhoto(Player player, Session s, int index) {
         ScreenRenderer r = renderer(player);
         Tasks.onMain(plugin, gallery.list(player.getUniqueId()), list -> {
@@ -800,44 +903,23 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             Tasks.onMain(plugin, gallery.media(item.id()), media -> {
                 if (!player.isOnline() || media == null) return;
                 String info = photoInfo(item, media);
-                Grid grid = new Grid(r, 3);
-                grid.add(null, lang.plain("ui.button.prev"), Views.Tone.DIM, "photos/" + (at - 1));
-                grid.add(null, lang.plain("ui.button.stop"), Views.Tone.NORMAL, "photos/" + at);
-                grid.add(null, lang.plain("ui.button.next"), Views.Tone.DIM, "photos/" + (at + 1));
-                grid.add(null, lang.plain("ui.button.keep"), Views.Tone.PRINT, "photoprint/" + item.id());
-                grid.add(null, lang.plain("ui.button.share"), Views.Tone.ACCENT, "photoshare/" + item.id());
-                grid.add(null, lang.plain("ui.button.delete"), Views.Tone.DANGER, "photodel/" + item.id());
-                List<ActionButton> buttons = grid.finish();
                 boolean back = s.fromCamera && camera.isActive(player);
-                play(player, s, media, frame -> r.photos(new Views.Photos(clock(), frame, true, at, list.size(), info, ""), 0),
-                        body -> showFrame(player, s, Screen.PHOTOS, body, List.of(), buttons, back ? "ui.button.camera" : "ui.button.back",
-                                back ? "camback" : "home", r));
+                stopPlayback(s);
+                Playback pb = newPlayback(player, s, media, Screen.PHOTOS, back ? "ui.button.camera" : "ui.button.back", back ? "camback" : "home", r,
+                        frame -> r.photos(new Views.Photos(clock(), frame, true, at, list.size(), info, ""), 0), paused -> {
+                            Grid grid = new Grid(r, 3);
+                            grid.add(null, lang.plain("ui.button.prev"), Views.Tone.DIM, "photos/" + (at - 1));
+                            if (paused) grid.add("play", lang.plain("ui.button.play"), Views.Tone.ACCENT, "pbplay");
+                            else grid.add("pause", lang.plain("ui.button.pause"), Views.Tone.ACCENT, "pbpause");
+                            grid.add(null, lang.plain("ui.button.next"), Views.Tone.DIM, "photos/" + (at + 1));
+                            grid.add(null, lang.plain("ui.button.keep"), Views.Tone.PRINT, "photoprint/" + item.id());
+                            grid.add(null, lang.plain("ui.button.share"), Views.Tone.ACCENT, "photoshare/" + item.id());
+                            grid.add(null, lang.plain("ui.button.delete"), Views.Tone.DANGER, "photodel/" + item.id());
+                            return grid.finish();
+                        });
+                runPlayback(player, s, pb);
             });
         });
-    }
-
-    /**
-     * Sends one dialog per frame of {@code media} at {@code photos.playback-fps}, ending on the first frame. Any other
-     * screen stops it.
-     */
-    private void play(Player player, Session s, MediaStore.Media media, java.util.function.Function<int[], Component> render,
-                      java.util.function.Consumer<Component> send) {
-        stopPlayback(s);
-        int frames = media.frames().size();
-        int step = Math.max(1, Math.round(media.frames().size() / (float) (media.seconds() * cfg.playbackFps)));
-        int interval = Math.max(1, 20 / cfg.playbackFps);
-        int[] at = {0};
-        s.playback = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (!player.isOnline()) {
-                stopPlayback(s);
-                return;
-            }
-            int i = at[0];
-            boolean last = i >= frames;
-            send.accept(render.apply(media.frames().get(last ? 0 : i)));
-            at[0] = i + step;
-            if (last) stopPlayback(s);
-        }, 0L, interval);
     }
 
     private void printPhoto(Player player, Session s, long id) {
@@ -903,19 +985,28 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         s.sending = true;
         Tasks.onMain(plugin, db.playerName(to), name -> {
             String toName = name == null ? lang.plain("ui.contacts.unknown") : name;
-            messages.send(player, to, toName, lang.plain("ui.share.message"), result -> {
-                if (result != MessageService.SendResult.OK) {
+            Tasks.onMain(plugin, gallery.media(id), media -> {
+                if (media == null) {
                     s.sending = false;
-                    s.notice = error(result);
-                    openShare(player, s, id);
+                    s.notice = lang.plain("ui.photos.missing");
+                    if (player.isOnline()) openPhotos(player, s.photoIndex);
                     return;
                 }
-                Tasks.onMain(plugin, gallery.sendCopy(id, to, player.getName()), copy -> {
-                    s.sending = false;
-                    if (!player.isOnline()) return;
-                    s.notice = copy >= 0 ? lang.plain("ui.share.sent", "player", toName)
-                            : copy == -1 ? lang.plain("ui.share.full", "player", toName) : lang.plain("ui.photos.missing");
-                    openPhotos(player, s.photoIndex);
+                // the picture rides in the message itself (it shows in the conversation) and a copy goes into their Photos
+                messages.send(player, to, toName, lang.plain("ui.share.message"), media.poster(), result -> {
+                    if (result != MessageService.SendResult.OK) {
+                        s.sending = false;
+                        s.notice = error(result);
+                        openShare(player, s, id);
+                        return;
+                    }
+                    Tasks.onMain(plugin, gallery.sendCopy(id, to, player.getName()), copy -> {
+                        s.sending = false;
+                        if (!player.isOnline()) return;
+                        s.notice = copy >= 0 ? lang.plain("ui.share.sent", "player", toName)
+                                : copy == -1 ? lang.plain("ui.share.full", "player", toName) : lang.plain("ui.photos.missing");
+                        openPhotos(player, s.photoIndex);
+                    });
                 });
             });
         });
@@ -1002,6 +1093,51 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         return n > 99 ? "99+" : String.valueOf(n);
     }
 
+    /**
+     * The feed's buttons. A video post gets a Pause / Play button in the middle of the first row; the repost / delete
+     * button moves to the second row (where "new post" is on photo posts), because the grid is five columns wide.
+     */
+    private Grid feedGrid(ScreenRenderer r, Session s, UUID me, UUID profile, Database.GramPage page, boolean video, boolean paused,
+                          Player player) {
+        Database.GramPost post = page.post();
+        String where = profile == null ? "gramf/" : "gramp/" + profile + "/";
+        Grid grid = new Grid(r, 5);
+        boolean many = page.total() > 1;
+        Views.Btn deleteOrRepost = null;
+        if (post != null) {
+            boolean own = post.author().equals(me);
+            grid.add("left", "", many && page.index() > 0 ? Views.Tone.NORMAL : Views.Tone.DIM, many ? where + (page.index() - 1) : "nop");
+            grid.add(new Views.Btn(post.liked() ? "heart_full" : "heart", count(post.likes()), post.liked() ? Views.Tone.ACTIVE : Views.Tone.NORMAL,
+                    "gramlike", lang.plain(post.liked() ? "ui.gram.unlike" : "ui.gram.like")));
+            grid.add(new Views.Btn("comment", count(post.comments()), Views.Tone.NORMAL, "gramcom/0", lang.plain("ui.gram.comments")));
+            if (own || (gram.moderator(player) && s.confirmPostDelete == post.entryId())) {
+                boolean confirm = s.confirmPostDelete == post.entryId();
+                deleteOrRepost = new Views.Btn("trash", confirm ? "?" : "", Views.Tone.DANGER, "gramdel",
+                        lang.plain(confirm ? "ui.gram.confirm-delete" : "ui.gram.delete"));
+            } else {
+                deleteOrRepost = new Views.Btn("repost", count(post.reposts()), post.reposted() ? Views.Tone.ACCENT : Views.Tone.NORMAL, "gramrp",
+                        lang.plain(post.reposted() ? "ui.gram.unrepost" : "ui.gram.repost"));
+            }
+            if (video) {
+                grid.add(new Views.Btn(paused ? "play" : "pause", "", Views.Tone.ACCENT, paused ? "pbplay" : "pbpause",
+                        lang.plain(paused ? "ui.button.play" : "ui.button.pause")));
+            } else {
+                grid.add(deleteOrRepost);
+            }
+            grid.add("right", "", many && page.index() < page.total() - 1 ? Views.Tone.NORMAL : Views.Tone.DIM,
+                    many ? where + (page.index() + 1) : "nop");
+        }
+        boolean ownProfile = profile != null && profile.equals(me);
+        grid.add(new Views.Btn("home", "", profile == null ? Views.Tone.NORMAL : Views.Tone.DIM, "gramf/0", lang.plain("ui.gram.feed")));
+        grid.add(new Views.Btn("search", "", Views.Tone.DIM, "gramsearch", lang.plain("ui.gram.search")));
+        if (video && deleteOrRepost != null) grid.add(deleteOrRepost);
+        else grid.add(new Views.Btn("plus", "", Views.Tone.DIM, "gramnew/0", lang.plain("ui.gram.new-post")));
+        grid.add(new Views.Btn("heart", "", Views.Tone.DIM, "gramact", lang.plain("ui.gram.activity")));
+        grid.add(new Views.Btn("profile", "", ownProfile ? Views.Tone.NORMAL : Views.Tone.DIM, "gramme",
+                lang.plain(ownProfile ? "ui.gram.edit" : "ui.gram.profile")));
+        return grid;
+    }
+
     private void showFeed(Player player, Session s, ScreenRenderer r, UUID profile, Database.GramAccount acct, Database.GramPage page,
                           MediaStore.Media media) {
         UUID me = player.getUniqueId();
@@ -1011,34 +1147,10 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         String notice = s.notice;
         s.notice = "";
         Database.GramPost post = page.post();
-        String where = profile == null ? "gramf/" : "gramp/" + profile + "/";
-        Grid grid = new Grid(r, 5);
-        boolean many = page.total() > 1;
-        if (post != null) {
-            boolean own = post.author().equals(me);
-            grid.add("left", "", many && page.index() > 0 ? Views.Tone.NORMAL : Views.Tone.DIM, many ? where + (page.index() - 1) : "nop");
-            grid.add(new Views.Btn(post.liked() ? "heart_full" : "heart", count(post.likes()), post.liked() ? Views.Tone.ACTIVE : Views.Tone.NORMAL,
-                    "gramlike", lang.plain(post.liked() ? "ui.gram.unlike" : "ui.gram.like")));
-            grid.add(new Views.Btn("comment", count(post.comments()), Views.Tone.NORMAL, "gramcom/0", lang.plain("ui.gram.comments")));
-            if (own || (gram.moderator(player) && s.confirmPostDelete == post.entryId())) {
-                boolean confirm = s.confirmPostDelete == post.entryId();
-                grid.add(new Views.Btn("trash", confirm ? "?" : "", Views.Tone.DANGER, "gramdel",
-                        lang.plain(confirm ? "ui.gram.confirm-delete" : "ui.gram.delete")));
-            } else {
-                grid.add(new Views.Btn("repost", count(post.reposts()), post.reposted() ? Views.Tone.ACCENT : Views.Tone.NORMAL, "gramrp",
-                        lang.plain(post.reposted() ? "ui.gram.unrepost" : "ui.gram.repost")));
-            }
-            grid.add("right", "", many && page.index() < page.total() - 1 ? Views.Tone.NORMAL : Views.Tone.DIM,
-                    many ? where + (page.index() + 1) : "nop");
-            if (s.confirmPostDelete != post.entryId()) s.confirmPostDelete = -1;
-        }
+        boolean video = post != null && media != null && media.video();
+        if (post != null && s.confirmPostDelete != post.entryId()) s.confirmPostDelete = -1;
+        Grid grid = feedGrid(r, s, me, profile, page, video, true, player);
         boolean ownProfile = profile != null && profile.equals(me);
-        grid.add(new Views.Btn("home", "", profile == null ? Views.Tone.NORMAL : Views.Tone.DIM, "gramf/0", lang.plain("ui.gram.feed")));
-        grid.add(new Views.Btn("search", "", Views.Tone.DIM, "gramsearch", lang.plain("ui.gram.search")));
-        grid.add(new Views.Btn("plus", "", Views.Tone.DIM, "gramnew/0", lang.plain("ui.gram.new-post")));
-        grid.add(new Views.Btn("heart", "", Views.Tone.DIM, "gramact", lang.plain("ui.gram.activity")));
-        grid.add(new Views.Btn("profile", "", ownProfile ? Views.Tone.NORMAL : Views.Tone.DIM, "gramme",
-                lang.plain(ownProfile ? "ui.gram.edit" : "ui.gram.profile")));
         Views.Profile header = profile == null ? null
                 : new Views.Profile(profile, acct == null ? "?" : acct.handle(), acct == null ? "" : acct.bio(), acct == null ? 0 : acct.posts(), ownProfile);
         int[] photo = media == null ? null : media.poster();
@@ -1047,11 +1159,13 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
         String exit = profile == null ? "home" : "gramf/0";
         s.gramBack = () -> openFeed(player, s, profile, page.index());
         show(player, s, Screen.GRAM_FEED, body, List.of(), grid, "ui.button.back", exit);
-        // a video plays once when it comes up
-        if (post != null && media != null && media.video() && cfg.gramAutoplay) {
-            List<ActionButton> buttons = new ArrayList<>(grid.out);
-            play(player, s, media, frame -> r.feed(new Views.Feed(clock(), postView(post, frame), page.index(), page.total(), header, ""), 0),
-                    frame -> showFrame(player, s, Screen.GRAM_FEED, frame, List.of(), buttons, "ui.button.back", exit, r));
+        // a video waits on its first frame with a Play button; it only plays by itself when autoplay is on. Every frame is a
+        // new dialog, which puts the scroll position back at the top - so by default nothing moves until you press Play.
+        if (video) {
+            Playback pb = newPlayback(player, s, media, Screen.GRAM_FEED, "ui.button.back", exit, r,
+                    frame -> r.feed(new Views.Feed(clock(), postView(post, frame), page.index(), page.total(), header, ""), 0),
+                    paused -> feedGrid(r, s, me, profile, page, true, paused, player).finish());
+            if (cfg.gramAutoplay) runPlayback(player, s, pb);
         }
     }
 
@@ -1397,6 +1511,8 @@ public final class UiController implements Listener, MessageService.Notifier, Ca
             }
             case "photos" -> openPhotos(player, Integer.parseInt(path[1]));
             case "photoplay" -> playPhoto(player, s, Integer.parseInt(path[1]));
+            case "pbpause" -> pausePlayback(player, s);
+            case "pbplay" -> resumePlayback(player, s);
             case "photoprint" -> printPhoto(player, s, Long.parseLong(path[1]));
             case "photodel" -> deletePhoto(player, s, Long.parseLong(path[1]));
             case "photoshare" -> openShare(player, s, Long.parseLong(path[1]));

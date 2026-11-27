@@ -5,7 +5,7 @@
 
 # Bumped when texts change. An older file on the server is kept as en.yml.old-<version> and replaced by this one,
 # so screens never mix old wording with new buttons. Copy your changes over from the backup.
-version: 3
+version: 4
 
 item:
   phone:
@@ -47,8 +47,19 @@ camera:
   not-allowed: "<red>You cannot use the camera."
   hold-phone: "<red>Hold the phone in your hand to use the camera."
   # <lens> is lens-rear or lens-front below
-  actionbar: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> F: video <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
-  actionbar-no-video: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  actionbar: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> F: video <dark_gray>|</dark_gray> Q: filter <aqua><filter></aqua> <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  actionbar-no-video: "<white><lens> <yellow><zoom>x</yellow> <dark_gray>|</dark_gray> <gray>Right: photo <dark_gray>|</dark_gray> Left: flip <dark_gray>|</dark_gray> Q: filter <aqua><filter></aqua> <dark_gray>|</dark_gray> Scroll: zoom <dark_gray>|</dark_gray> Sneak: close"
+  # Q cycles the filters; the viewfinder shows the filter (needs the pack) and the saved picture has it applied
+  filter-none: "no filter"
+  filter-mono: "Mono"
+  filter-noir: "Noir"
+  filter-sepia: "Sepia"
+  filter-vivid: "Vivid"
+  filter-warm: "Warm"
+  filter-cool: "Cool"
+  filter-fade: "Fade"
+  filter-vignette: "Vignette"
+  filter-pixel: "Pixel"
   lens-rear: "Camera"
   lens-front: "<aqua>Selfie</aqua>"
   actionbar-preparing: "<yellow>Preparing the recording..."
@@ -118,6 +129,7 @@ ui:
     next: "Next >"
     play: "Play"
     stop: "Stop"
+    pause: "Pause"
     share: "Share"
     confirm-delete: "Sure?"
     create: "Create account"
@@ -173,6 +185,8 @@ ui:
     online: "online"
     offline: "offline"
     read-mark: "(read)"
+    photo: "photo"
+    photo-gone: "Photo deleted"
   send-error:
     empty: "Type a message first"
     too-long: "Too long (max <max> characters)"
@@ -204,7 +218,7 @@ ui:
     hint: "Post it, or send a copy to someone"
     gram: "Post to Minestagram"
     send-to: "Send to <player>"
-    message: "[Photo] I sent you a photo - open Photos"
+    message: "Sent you a photo"
     sent: "Sent to <player>"
     full: "<player>'s Photos app is full"
   gram:

@@ -23,6 +23,29 @@ Minestagram (accounts, posts, likes, comments, reposts, search, activity) and Se
 | --- | --- |
 | ![Photo](docs/photo-render.png) | ![Selfie](docs/selfie.png) |
 
+## Changes in 1.3.0
+
+- **Photos in messages.** Sharing a photo from the Photos app now puts the picture itself into the conversation (a 64 px
+  thumbnail above a caption bubble), for both sides, and still puts a copy into the other player's Photos. The picture is kept
+  in `plugins/Phone/attachments/<message id>.png` and goes away with the message; `messages.photo` column added to phone.db
+  (upgrades itself).
+- **Easier to read.** Brighter grey text (time, names, hints), pure white text in bubbles, a darker purple for your bubbles and a
+  lighter grey for theirs (more contrast against the black screen), brighter accent / alert colours. Sizes and line spacing are
+  fixed by the dialog (9 px lines), so this release only changes colour and contrast.
+- **Minestagram scrolling.** Cause (found from the 26.3 client: a dialog is one scrollable layout, but every *new* dialog starts
+  at the top again): a video post played by itself, sending a new dialog for every frame, so the scroll position jumped back to
+  the top ten times a second. Videos now wait on their first frame; `minestagram.autoplay: false` is the new default (the key
+  was renamed from `autoplay-videos`, so an old `true` on a server does not carry over).
+- **Pause / Play.** Videos in Photos and Minestagram have a Pause button that holds the frame (the dialog is not re-sent while
+  paused, so scrolling works) and a Play button that carries on from there. In the feed a video post has the button in the middle
+  of the first row; the repost / delete button moves to the second row, in place of "new post".
+- **Camera filters.** The **Q** key (drop) cycles none, Mono, Noir, Sepia, Vivid, Warm, Cool, Fade, Vignette and Pixel. The
+  viewfinder previews it with a post effect (`phone:filter_<name>`, needs the pack), and the saved photo or video has the same
+  filter applied to every frame (`camera/Filters.java`; the post effects are generated from the same table, keep them in sync).
+  `camera.filters: false` turns it off; `/phone shutter <player> filter <n>` sets it from a script. The filter is remembered until
+  the server restarts. A player without the pack still gets the filter in the saved picture.
+- lang/en.yml is version 4 (the old file is kept as en.yml.old-3).
+
 ## Changes in 1.2.0
 
 - **New look.** The phone is portrait now: a black screen in a rounded bezel with the dynamic island, status bar
@@ -67,6 +90,16 @@ port of its own (8765), which most hosts do not open, so on such a server nobody
 
 ## What was checked, and what was not
 
+**1.3.0 (real 26.3 client, GUI scale 3, buttons driven with `/phone click`):** a photo sent in a message shows as a thumbnail
+above its caption bubble in the conversation; the new bubble colours; a video post in the feed waits on its first frame with a
+Play button, and after Play + Pause it stops on a later frame with the Play button back; the camera viewfinder with the Sepia and
+Pixel filters (post effects) and the filter name in the action bar. **Not checked:** a real mouse-wheel scroll in Minestagram
+(the rig cannot send input; the cause was found in the client code and the config, not seen), pressing Q, the saved photo with a
+filter looked at (only the maths is unit-tested), the other filters on screen, pausing in the Photos app, a photo message
+received by a second player, Minestagram posts with the pause button in the 5-column row on a real click.
+
+Earlier checks (1.2.0):
+
 Checked on a real 26.3 client against a Paper 26.3 server, 1.2.0 (screenshots above come from those runs):
 
 - the portrait phone on every screen: lock (set-up), home, contacts, conversation, Photos with a photo and with a
@@ -97,7 +130,7 @@ effects, printing to a map and the map surviving a restart.
 
 ## Setup
 
-1. `./gradlew build` (needs a JDK 25 or newer). Output: `build/libs/phone-1.2.0.jar` and `build/pack/phone-pack.zip`
+1. `./gradlew build` (needs a JDK 25 or newer). Output: `build/libs/phone-1.3.0.jar` and `build/pack/phone-pack.zip`
    with its SHA-1 in `build/pack/phone-pack.zip.sha1`.
 2. Put the jar in `plugins/` (delete the old Phone jar) and start the server. `plugins/Phone/` gets `config.yml`,
    `lang/en.yml`, `phone.db`, `photos/` (printed photos), `videos/`, `gallery/` (the Photos app), `minestagram/`
@@ -346,7 +379,7 @@ maximum length.
   shadows; blocks the client draws in code (chests, signs, beds, banners, shulker boxes) are map-colour cubes;
   mobs other than the ones listed are boxes; text displays use the ASCII part of the font only.
 - A photo in a dialog is a big packet (a few hundred kilobytes before compression); a playing video sends one per
-  frame. Lower `photos.playback-fps` or `minestagram.autoplay-videos: false` on a busy server.
+  frame. Lower `photos.playback-fps` or `minestagram.autoplay: false` (the default) on a busy server.
 - The client's dialog layout puts all buttons under the text: the like / comment / repost row sits under the
   caption, not right under the picture as in the real app.
 - Zoom pips show the position among the pack's eight levels, not among the levels chosen in config.

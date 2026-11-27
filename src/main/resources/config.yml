@@ -82,6 +82,9 @@ messaging:
 
 camera:
   enabled: true
+  # Filters (mono, noir, sepia, vivid, warm, cool, fade, vignette, pixel): the Q key cycles them in the viewfinder. The picture that is
+  # saved has the filter applied; the live preview needs the pack.
+  filters: true
   cooldown-seconds: 5
   # Vertical field of view the photo is rendered with at 1x. The server cannot read the client's FOV setting;
   # 70 is the vanilla default. Players set their own with /phone fov <30-110>.
@@ -146,8 +149,10 @@ minestagram:
   comments-per-minute: 6
   # Seconds between two posts of one player (moderators are exempt).
   post-cooldown-seconds: 30
-  # A video post plays once when it comes up in the feed.
-  autoplay-videos: true
+  # A video post plays once by itself when it comes up in the feed. Off by default: every frame is a new dialog and the client
+  # puts a new dialog back at the top, so while a video plays you cannot scroll down. With this off a video waits on its first
+  # frame and the Play button starts it; Pause holds it (and scrolling works again).
+  autoplay: false
   # Tell an online author (action bar + sound) when someone likes, comments on or reposts their post.
   notify: true
 

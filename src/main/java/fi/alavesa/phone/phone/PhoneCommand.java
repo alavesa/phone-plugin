@@ -96,6 +96,10 @@ public final class PhoneCommand {
                                     plugin.ui().close(target, true);
                                     return plugin.camera().print(target) ? Command.SINGLE_SUCCESS : 0;
                                 }))
+                                .then(Commands.literal("filter")
+                                        .then(Commands.argument("number", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 99))
+                                                .executes(ctx -> plugin.camera().setFilter(target(ctx),
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "number")) ? Command.SINGLE_SUCCESS : 0)))
                                 .then(Commands.literal("selfie").executes(ctx -> {
                                     plugin.camera().toggleSelfie(target(ctx));
                                     return Command.SINGLE_SUCCESS;

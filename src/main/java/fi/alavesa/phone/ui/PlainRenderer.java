@@ -148,6 +148,7 @@ public final class PlainRenderer implements ScreenRenderer {
     private Component message(String partnerName, Views.Bubble b) {
         String prefix = "[" + b.time() + "] " + (b.outgoing() ? lang.plain("ui.conversation.you") : partnerName) + ": ";
         Component line = Component.text(prefix, b.outgoing() ? NamedTextColor.AQUA : NamedTextColor.YELLOW)
+                .append(Component.text(b.photo() ? "[" + lang.plain("ui.conversation.photo") + "] " : "", NamedTextColor.AQUA))
                 .append(Component.text(b.body(), NamedTextColor.WHITE));
         if (b.edited()) line = line.append(Component.text(" " + lang.plain("ui.conversation.edited"), NamedTextColor.DARK_GRAY));
         if (b.outgoing() && b.read()) line = line.append(Component.text(" " + lang.plain("ui.conversation.read-mark"), NamedTextColor.DARK_GRAY));
@@ -155,7 +156,7 @@ public final class PlainRenderer implements ScreenRenderer {
     }
 
     @Override
-    public int messageLines(String body) {
+    public int messageLines(String body, boolean photo) {
         // prefix estimate: "[00:00] " + a 16 character name + ": "
         return Math.max(1, (int) Math.ceil((fw.width(body, false) + 150) / (double) (WIDTH - 8)));
     }

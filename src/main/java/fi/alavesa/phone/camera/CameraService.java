@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -82,6 +83,9 @@ public final class CameraService implements Listener {
 
     private static final class Session {
         int zoomIndex;
+        /** Filter number, see {@link Filters#at}: 0 = none. */
+        int filter;
+        Key filterEffect;
         long lastShot;
         boolean capturing;
         boolean postEffect;         // zoom by post effect (else by FOV)
@@ -125,6 +129,8 @@ public final class CameraService implements Listener {
     /** Puts the player's phones back into their normal/unread look when the viewfinder closes. */
     private java.util.function.Consumer<Player> itemSync = p -> { };
     private final Map<UUID, Session> sessions = new HashMap<>();
+    /** The filter each player used last: the viewfinder opens with it again. */
+    private final Map<UUID, Integer> lastFilter = new HashMap<>();
     private final ExecutorService renderer = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "phone-camera");
         t.setDaemon(true);
@@ -254,6 +260,7 @@ public final class CameraService implements Listener {
         s.postEffect = cfg.zoomMethod == PhoneConfig.ZoomMethod.POST_EFFECT && pack.hasPack(player);
         sessions.put(player.getUniqueId(), s);
         items.sync(player, PhoneItems.State.CAMERA);
+        s.filter = cfg.filters ? lastFilter.getOrDefault(player.getUniqueId(), 0) : 0;
         applyZoom(player, s);
         hint(player, s);
     }
@@ -263,6 +270,7 @@ public final class CameraService implements Listener {
         if (s == null) return;
         if (s.recording != null) s.recording.stopped = true;      // frames already queued are dropped with the session
         if (s.effect != null) postFx.set(player, s.effect, false);
+        if (s.filterEffect != null) postFx.set(player, s.filterEffect, false);
         postFx.set(player, FLASH, false);
         AttributeInstance speed = player.getAttribute(Attribute.MOVEMENT_SPEED);
         if (speed != null) speed.removeModifier(FOV_MODIFIER);
@@ -280,6 +288,7 @@ public final class CameraService implements Listener {
                 if (s.effect != null) postFx.set(player, s.effect, false);
                 s.effect = next;
             }
+            applyFilter(player, s, true);
         } else {
             AttributeInstance speed = player.getAttribute(Attribute.MOVEMENT_SPEED);
             if (speed == null) return;
@@ -289,6 +298,51 @@ public final class CameraService implements Listener {
                 speed.addTransientModifier(new AttributeModifier(FOV_MODIFIER, 2 * factor - 2, AttributeModifier.Operation.MULTIPLY_SCALAR_1));
             }
         }
+    }
+
+    /**
+     * Puts the filter's post effect on, after the zoom effect (effects run in the order they were added, and the filter
+     * must see the zoomed, framed picture). {@code reorder}: take it off first so that it moves behind a new zoom effect.
+     */
+    private void applyFilter(Player player, Session s, boolean reorder) {
+        Filters.Filter f = Filters.at(s.filter);
+        Key wanted = f == null || !s.postEffect ? null : Key.key("phone", "filter_" + f.id());
+        if (s.filterEffect != null && (reorder || !s.filterEffect.equals(wanted))) {
+            postFx.set(player, s.filterEffect, false);
+            s.filterEffect = null;
+        }
+        if (wanted != null && s.filterEffect == null) {
+            postFx.set(player, wanted, true);
+            s.filterEffect = wanted;
+        }
+    }
+
+    /** The drop key (Q) switches to the next filter: none, then each of {@link Filters#ALL}. */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onDrop(org.bukkit.event.player.PlayerDropItemEvent e) {
+        Session s = sessions.get(e.getPlayer().getUniqueId());
+        if (s == null || !cfg.filters || !items.isPhone(e.getItemDrop().getItemStack())) return;
+        e.setCancelled(true);
+        s.filter = (s.filter + 1) % Filters.count();
+        lastFilter.put(e.getPlayer().getUniqueId(), s.filter);
+        applyFilter(e.getPlayer(), s, false);
+        hint(e.getPlayer(), s);
+    }
+
+    /** Sets the viewfinder filter (0 = none, 1.. = {@link Filters#ALL}); false when the viewfinder is not open. */
+    public boolean setFilter(Player player, int number) {
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null || !cfg.filters) return false;
+        s.filter = Math.floorMod(number, Filters.count());
+        lastFilter.put(player.getUniqueId(), s.filter);
+        applyFilter(player, s, false);
+        hint(player, s);
+        return true;
+    }
+
+    private Component filterName(Session s) {
+        Filters.Filter f = Filters.at(s.filter);
+        return lang.get(f == null ? "camera.filter-none" : "camera.filter-" + f.id());
     }
 
     private void hint(Player player, Session s) {
@@ -302,6 +356,7 @@ public final class CameraService implements Listener {
         player.sendActionBar(lang.get(s.capturing ? "camera.actionbar-capturing"
                         : cfg.videoEnabled ? "camera.actionbar" : "camera.actionbar-no-video",
                 Lang.ph("zoom", cfg.zoomLevels.get(s.zoomIndex)),
+                Lang.ph("filter", filterName(s)),
                 Lang.ph("lens", lang.get(s.selfie ? "camera.lens-front" : "camera.lens-rear"))));
     }
 
@@ -595,6 +650,12 @@ public final class CameraService implements Listener {
             return;
         }
         if (!player.isOnline() || sessions.get(player.getUniqueId()) != s) return;
+        Filters.Filter filter = cfg.filters ? Filters.at(s.filter) : null;
+        if (filter != null && frames != null) {
+            List<int[]> filtered = new ArrayList<>(frames.size());
+            for (int[] f : frames) filtered.add(Filters.apply(filter, f, MediaStore.SIZE));
+            frames = filtered;
+        }
         s.pending = new Pending(frames, takenAt, eye);
         if (s.autoPrint) {
             s.autoPrint = false;
