@@ -202,6 +202,21 @@ public final class PhotoStore implements Listener {
         return item(view, photographer, takenAt, where, "item.video.name", frames.size() / (double) fps);
     }
 
+    /** Right-click with a printed video in the main hand: pause / play it. (Item frames are left alone.) */
+    @EventHandler(priority = org.bukkit.event.EventPriority.HIGH)
+    public void onVideoClick(org.bukkit.event.player.PlayerInteractEvent e) {
+        if (e.getHand() != org.bukkit.inventory.EquipmentSlot.HAND) return;
+        if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_AIR && e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
+        ItemStack item = e.getItem();
+        if (item == null || item.getType() != Material.FILLED_MAP) return;
+        Integer photo = item.getPersistentDataContainer().get(PhoneItems.PHOTO, PersistentDataType.INTEGER);
+        VideoPainter painter = photo == null ? null : playing.get(photo);
+        if (painter == null) return;
+        e.setCancelled(true);
+        boolean paused = painter.togglePause();
+        e.getPlayer().sendActionBar(lang.get(paused ? "camera.video-paused" : "camera.video-playing"));
+    }
+
     @EventHandler
     public void onMapInitialize(MapInitializeEvent e) {
         MapView view = e.getMap();
@@ -291,6 +306,9 @@ public final class PhotoStore implements Listener {
         private long lastUsed;
         private long startedAt;
         private int showing = -1;
+        /** Right-click with the printed video in hand pauses it for everyone who sees this map; {@link #frozen} is the frame it holds. */
+        volatile boolean paused;
+        private volatile int frozen;
         private int[] poster;                       // first frame, shown until the file has been written
         private final int[] shown = new int[SIZE * SIZE];
         private final Map<Integer, java.awt.Color> colours = new HashMap<>();
@@ -348,10 +366,25 @@ public final class PhotoStore implements Listener {
                 }
                 return;
             }
-            int index = (int) ((now - startedAt) * fps / 1000 % loaded.length);
+            int index = paused ? Math.min(frozen, loaded.length - 1) : (int) ((now - startedAt) * fps / 1000 % loaded.length);
             if (index == showing) return;
             showing = index;
             paint(canvas, loaded[index], shown, colours);
+        }
+
+        /** @return true when the video is paused afterwards */
+        boolean togglePause() {
+            long now = System.currentTimeMillis();
+            int[][] loaded = frames;
+            if (loaded == null) return false;       // not loaded yet: nothing to hold
+            if (paused) {
+                startedAt = now - frozen * 1000L / fps;   // carry on from the held frame
+                paused = false;
+            } else {
+                frozen = (int) ((now - startedAt) * fps / 1000 % loaded.length);
+                paused = true;
+            }
+            return paused;
         }
 
         /** Main thread, every five seconds: nobody has drawn this video for a while, so its frames go. */

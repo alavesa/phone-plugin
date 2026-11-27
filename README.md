@@ -44,6 +44,8 @@ Minestagram (accounts, posts, likes, comments, reposts, search, activity) and Se
   filter applied to every frame (`camera/Filters.java`; the post effects are generated from the same table, keep them in sync).
   `camera.filters: false` turns it off; `/phone shutter <player> filter <n>` sets it from a script. The filter is remembered until
   the server restarts. A player without the pack still gets the filter in the saved picture.
+- **Printed videos pause too.** Right-click with a printed video map in the main hand to pause / play it (one state per map, for
+  everyone who sees it; item frames are left alone). Not tried on a client.
 - lang/en.yml is version 4 (the old file is kept as en.yml.old-3).
 
 ## Changes in 1.2.0
